@@ -1,46 +1,161 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
-import { newsPosts } from './news-data';
+import { useEffect, useMemo, useState } from 'react';
+import { Menu, X } from 'lucide-react';
 
-const slides = [{ image: '/reference/hero-xavis.png', label: 'XAVIS' }, { image: '/reference/hero-optimum.png', label: 'Optimum' }];
-type MenuGroup = { title: string; items: string[] };
+type MenuGroup = { title: string; id: string; items: { label: string; id: string }[] };
+
 const industryGroups: MenuGroup[] = [
-  { title: '食材分選', items: ['OPTIMUM-食材分選', 'Smart Grader-採樣分析'] },
-  { title: 'X光機異物檢測', items: ['XAVIS-X光機檢測', 'XAVIS-FSCAN自動重量檢測機', 'XAVIS-FSCAN重量分級檢測機', 'XAVIS-FSCAN鋁箔金屬檢測機'] },
-  { title: '回收再生', items: ['NIR手持式分析儀', 'NIHOT-回收再生', 'Matthiessen-破袋機', '合軒'] },
-  { title: '塑膠化工', items: ['MEAF-板材押出生產線', 'PROMIX-物理發泡', 'SBI-測厚儀'] },
+  { title: '食材分選', id: '1', items: [{ label: 'OPTIMUM-食材分選', id: '73' }, { label: 'Smart Grader-採樣分析', id: '82' }] },
+  { title: 'X光機異物檢測', id: '4', items: [{ label: 'XAVIS-X光機檢測', id: '77' }, { label: 'XAVIS-FSCAN自動重量檢測機', id: '97' }, { label: 'XAVIS-FSCAN重量分級檢測機', id: '100' }, { label: 'XAVIS-FSCAN鋁箔金屬檢測機', id: '98' }] },
+  { title: '回收再生', id: '6', items: [{ label: 'NIR手持式分析儀', id: '84' }, { label: 'NIHOT-回收再生', id: '78' }, { label: 'Matthiessen-破袋機', id: '91' }, { label: '合軒', id: '81' }] },
+  { title: '塑膠化工', id: '7', items: [{ label: 'MEAF-板材押出生產線', id: '86' }, { label: 'PROMIX-物理發泡', id: '79' }, { label: 'SBI-測厚儀', id: '96' }] },
 ];
+
+const tuples = (rows: string[][]) => rows.map(([label, id]) => ({ label, id }));
 const brandGroups: MenuGroup[] = [
-  { title: '品牌介紹', items: ['OPTIMUM', 'XAVIS', 'Smart Grader', 'MEAF', 'PROMIX', 'SBI', 'NIR', 'NIHOT', 'Matthiessen', '合軒'] },
-  { title: 'OPTIMUM-食材分選', items: ['NOVUS（皮帶式-適用新鮮、乾燥或冷凍產品）', 'VENTUS（適用堅果和乾果等產品）', 'TRIPLUS（自由落體式-適用新鮮、乾燥或冷凍產品）', 'MAGNUS（適用易碎水果）'] },
-  { title: 'XAVIS-自動重量檢測機', items: ['CWF590W輕量型重量檢測機', 'CWF590WR滾輪式重量檢測機', 'CSCAN自動重量檢測機', 'CWIN69X多列式重量檢測機'] },
-  { title: 'XAVIS-重量分級檢測機', items: ['XAVIS重量分級檢測機'] },
-  { title: 'XAVIS-食品異物X光機檢測', items: ['小包裝／未包裝X光食品自動異物檢測機', '低密度中型包裝／散裝 X光食品自動異物檢測機', '高密度中型包裝 X光食品自動異物檢測機', '管道式 X光食品自動異物檢測機', '大型包裝 X光食品自動異物檢測機', '小型罐頭／瓶子包裝 X光食品自動異物檢測機', '大型罐頭／瓶子包裝 X光食品自動異物檢測機', '魚骨／雞骨專用 X光食品自動異物檢測機'] },
-  { title: 'XAVIS-鋁箔金屬檢測機', items: ['MDN-200AD鋁箔金屬檢測機（標準）', 'MDN-200AH鋁箔金屬檢測機（進階）'] },
-  { title: 'XAVIS-工業產品X光機檢測', items: ['電池檢測專用'] }, { title: 'Smart Grader-採樣分析', items: ['智慧採樣分析器', '智慧分級機'] }, { title: 'MEAF-板材押出生產線', items: ['板材押出生產線'] }, { title: 'PROMIX-物理發泡', items: ['P1 冷卻混合器', '熔體混合器'] },
-  { title: 'SBI-測厚儀', items: ['KAPA I & KAPA II 電容／渦流雙感測厚薄儀', 'KAPA IR 紅外線厚薄儀', 'XRS SOFT X-RAY 低能量X光厚薄儀', 'SHADOW 雷射陰影測量厚薄儀', 'STG 雷射位移測量厚薄儀'] }, { title: 'NIR手持式分析儀', items: ['手持式NIR分析儀-塑料用', '手持式NIR分析儀-紡織用', '手持螢幕NIR分析儀-塑料用'] },
-  { title: 'NIHOT-回收再生', items: ['SDM 移動式風選機', 'SDI 風選機', 'WSF 風選機', 'DDS 風選機', 'SDX 風選機', '碟篩'] }, { title: 'Matthiessen-破袋機', items: ['SFIIIK3 破袋機'] }, { title: '合軒', items: ['渦電流分選機', '磁滾筒', '上吸式磁鐵', '鋁罐分選機'] },
+  { title: '品牌介紹', id: '89', items: tuples([['OPTIMUM','90'],['XAVIS','91'],['Smart Grader','110'],['MEAF','124'],['PROMIX','93'],['SBI','146'],['NIR','109'],['NIHOT','92'],['Matthiessen','131'],['合軒','98']]) },
+  { title: 'OPTIMUM-食材分選', id: '1', items: tuples([['NOVUS (皮帶式-適用新鮮、乾燥或冷凍產品)','78'],['VENTUS (適用堅果和乾果等產品)','80'],['TRIPLUS (自由落體式-適用新鮮、乾燥或冷凍產品)','79'],['MAGNUS (適用易碎水果)','150']]) },
+  { title: 'XAVIS-自動重量檢測機', id: '147', items: tuples([['CWF590W輕量型重量檢測機','156'],['CWF590WR滾輪式重量檢測機','158'],['CSCAN自動重量檢測機','149'],['CWIN69X多列式重量檢測機','161']]) },
+  { title: 'XAVIS-重量分級檢測機', id: '159', items: [{ label: 'XAVIS重量分級檢測機', id: '160' }] },
+  { title: 'XAVIS-食品異物X光機檢測', id: '2', items: tuples([['小包裝/未包裝X光食品自動異物檢測機','5'],['低密度中型包裝/散裝 X光食品自動異物檢測機','81'],['高密度中型包裝 X光食品自動異物檢測機','82'],['管道式 X光食品自動異物檢測機','83'],['大型包裝 X光食品自動異物檢測機','84'],['小型罐頭/瓶子包裝 X光食品自動異物檢測機','85'],['大型罐頭/瓶子包裝 X光食品自動異物檢測機','86'],['魚骨/雞骨專用 X光食品自動異物檢測機','127']]) },
+  { title: 'XAVIS-鋁箔金屬檢測機', id: '152', items: tuples([['MDN-200AD鋁箔金屬檢測機(標準)','153'],['MDN-200AH鋁箔金屬檢測機(進階)','154']]) },
+  { title: 'XAVIS-工業產品X光機檢測', id: '120', items: [{ label: '電池檢測專用', id: '121' }] },
+  { title: 'Smart Grader-採樣分析', id: '111', items: tuples([['智慧採樣分析器','113'],['智慧分級機','114']]) },
+  { title: 'MEAF-板材押出生產線', id: '122', items: [{ label: '板材押出生產線', id: '123' }] },
+  { title: 'PROMIX-物理發泡', id: '72', items: tuples([['P1 冷卻混合器','128'],['熔體混合器','129']]) },
+  { title: 'SBI-測厚儀', id: '140', items: tuples([['KAPA I & KAPA II 電容/渦流雙感測厚薄儀','141'],['KAPA IR 紅外線厚薄儀','142'],['XRS SOFT X-RAY 低能量X光厚薄儀','143'],['SHADOW 雷射陰影測量厚薄儀','144'],['STG 雷射位移測量厚薄儀','145']]) },
+  { title: 'NIR手持式分析儀', id: '112', items: tuples([['手持式NIR分析儀-塑料用','116'],['手持式NIR分析儀-紡織用','151'],['手持螢幕NIR分析儀-塑料用','155']]) },
+  { title: 'NIHOT-回收再生', id: '7', items: tuples([['SDM 移動式風選機','87'],['SDI 風選機','104'],['WSF 風選機','105'],['DDS 風選機','106'],['SDX 風選機','107'],['碟篩','108']]) },
+  { title: 'Matthiessen-破袋機', id: '137', items: [{ label: 'SFIIIK3 破袋機', id: '138' }] },
+  { title: '合軒', id: '99', items: tuples([['渦電流分選機','100'],['磁滾筒','101'],['上吸式磁鐵','102'],['鋁罐分選機','103']]) },
 ];
-const downloadGroups: MenuGroup[] = [{ title: '下載專區', items: ['NIHOT-回收再生', 'OPTIMUM-食材分選', 'PROMIX-塑膠化工', 'XAVIS-X光檢測'] }];
-const services = [['食材分選', '從天然或加工食品原物料，依顏色與外觀瑕疵完成品質等級分類。', '/reference/feature-food-highres.png'], ['X光機異物檢測', '各類食品包裝型態的X光機檢查，為食品出廠前安全把關。', '/reference/feature-xray-highres.png'], ['回收再生', '消費端廢棄物整體風選分類設備，支持循環自動化方案。', '/reference/feature-recycle-highres.png'], ['塑膠化工', '食品容器生產的物理性發泡技術與量測解決方案。', '/reference/feature-plastic-highres.png']];
-const navItems = [{ label: '產業服務', target: '#services', groups: industryGroups }, { label: '代理品牌', target: '#brands', groups: brandGroups }, { label: '最新消息', target: '/news' }, { label: '下載專區', target: '/downloads', groups: downloadGroups }, { label: '詢價系統', target: '/inquiry' }, { label: '聯絡我們', target: '/contact' }];
 
-const catalogLink = (group: string, item = '') => `/catalog?group=${encodeURIComponent(group)}${item ? `&item=${encodeURIComponent(item)}` : ''}`;
+const featureCards = [
+  { title: '食材分選', id: '1', image: '/reference/original/feature01.jpg' },
+  { title: 'X光檢測', id: '4', image: '/reference/original/feature02.jpg' },
+  { title: '回收再生', id: '6', image: '/reference/original/feature03.jpg' },
+  { title: '塑膠化工', id: '7', image: '/reference/original/feature04.jpg' },
+];
 
-function MegaMenu({ groups, label }: { groups: MenuGroup[]; label: string }) { return <div className={`mega-menu ${groups.length > 6 ? 'mega-menu-large' : ''}`} aria-label={`${label}子選單`}>{groups.map((group) => <section className="menu-group" key={group.title}><a className="menu-heading" href={catalogLink(group.title)}>{group.title}</a>{group.items.map((item) => <a href={catalogLink(group.title, item)} key={item}>{item}</a>)}</section>)}</div>; }
+const agencies = [
+  ['index_005.jpg','板材押出生產線','122'], ['index_003.jpg','風選機','7'], ['index_004.jpg','食材分選','1'], ['index_001.jpg','物理發泡','72'], ['index_010.png','測厚儀','140'], ['index_006.jpg','採樣分析','111'], ['index_007.jpg','NIR手持式分析儀','112'], ['index_008.jpg','X光食品異物檢測','2'], ['index_009.jpg','渦電流及除鐵設備','99'],
+];
+
+const homeNews = [
+  ['3944','59d79791614c286ba688923bb61c0027.jpg','雞骨魚骨專用X光異物檢測機 Xavis','【AI 智慧辨識低密度骨頭異物，提升食品安全與檢測效率！】'],
+  ['3943','832c31c5d6883b514158eb460ca7c076.jpg','M1 SF 皮帶稱重機和袋裝填充機 Manter','【溫和秤重、精準填充，打造高效率蔬果包裝產線！】'],
+  ['3942','fc2a96f247a92a5c8f9c312cea0c60a9.jpg','多段式重量分級機 Xavis','【精準分級、高效作業，協助水產品加工提升產能與品質一致性】'],
+  ['3941','163bb1825e00146110f9f80f0fe9a8ef.jpg','番茄自動包裝線 Manter','【從秤重、包裝到棧板堆疊，一站式提升蔬果包裝效率！】'],
+];
+
+const productHref = (kind: 'industry' | 'brand', id: string) => `/catalog?type=${kind}&id=${id}`;
+
+function Dropdown({ groups, kind }: { groups: MenuGroup[]; kind: 'industry' | 'brand' }) {
+  return <div className={`original-dropdown ${kind === 'brand' ? 'is-wide' : ''}`}>
+    {groups.map(group => <div className="original-menu-group" key={`${kind}-${group.id}`}>
+      <a className="original-menu-title" href={productHref(kind, group.id)}>{group.title}<i className="original-fa original-fa-angle-right" aria-hidden="true" /></a>
+      <div className="original-submenu">{group.items.map(item => <a key={`${item.id}-${item.label}`} href={productHref(kind, item.id)}>{item.label}</a>)}</div>
+    </div>)}
+  </div>;
+}
 
 export default function Home() {
-  const [slide, setSlide] = useState(0); const [menuOpen, setMenuOpen] = useState(false); const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  useEffect(() => { const timer = window.setInterval(() => setSlide((current) => (current + 1) % slides.length), 7000); return () => window.clearInterval(timer); }, []);
-  const previous = () => setSlide((current) => (current - 1 + slides.length) % slides.length); const next = () => setSlide((current) => (current + 1) % slides.length); const toggleMenu = (label: string) => setActiveMenu((current) => current === label ? null : label);
-  return <main id="top"><header className="site-header"><div className="utility-bar"><div className="shell utility-inner"><div className="utility-links"><a href="https://goo.gl/maps/dvcWWbp4xf8AZ3dF6" target="_blank" rel="noreferrer">公司地址</a><i /> <a href="/contact">聯絡我們</a><i /> <a href="/catalog">搜尋</a></div><a href="/" aria-label="回到首頁"><img className="brand-logo" src="/reference/logo.png" alt="UniRise 合軒科技有限公司" /></a><div className="utility-links right"><a href="/inquiry">詢問車</a><i /> <a href="/contact">語系</a><i /> <span className="translate">Select Language⌄</span></div></div></div><nav className="main-nav"><div className="shell nav-inner"><button className="menu-button" type="button" aria-label="開啟選單" onClick={() => { setMenuOpen(!menuOpen); setActiveMenu(null); }}>{menuOpen ? <X size={24} /> : <Menu size={24} />}</button><div className={`nav-links ${menuOpen ? 'is-open' : ''}`}>{navItems.map((item) => <div className="nav-item" key={item.label} onMouseEnter={() => item.groups && setActiveMenu(item.label)} onMouseLeave={() => item.groups && setActiveMenu(null)}><a href={item.target} onClick={(event) => { if (item.groups) { event.preventDefault(); toggleMenu(item.label); } else { setMenuOpen(false); } }} aria-haspopup={Boolean(item.groups)} aria-expanded={item.groups ? activeMenu === item.label : undefined}>{item.label}{item.groups && <ChevronDown size={13} />}</a>{item.groups && activeMenu === item.label && <MegaMenu label={item.label} groups={item.groups} />}</div>)}</div></div></nav></header>
-    <section className="hero" aria-label="主視覺輪播">{slides.map((item, index) => <div key={item.label} className={`hero-slide ${slide === index ? 'active' : ''}`} aria-hidden={slide !== index}><img src={item.image} alt="" /></div>)}<button className="hero-arrow left" type="button" aria-label="上一張" onClick={previous}><ChevronLeft /></button><button className="hero-arrow right" type="button" aria-label="下一張" onClick={next}><ChevronRight /></button><div className="hero-indicator" aria-label={`目前為第 ${slide + 1} 張，共 ${slides.length} 張`}>{slides.map((item, index) => <button key={item.label} type="button" onClick={() => setSlide(index)} aria-label={`切換至 ${item.label}`} className={slide === index ? 'current' : ''} />)}</div></section>
-    <section className="overview"><div className="shell"><div className="section-kicker">SOLUTION OVERVIEW</div><h1>食品生產者到消費端的循環自動化方案</h1><p>我們提供從食品原物料的自動化分選、各類食品包裝的X光檢查、肉類及無刺鮮魚的高解析度檢測，到食品容器物理性發泡與消費端廢棄物風選分類的完整支援。</p></div></section>
-    <section className="intro shell" id="services"><div className="section-kicker">INDUSTRIAL SERVICES</div><h2>產業服務</h2><p>以下服務分類與產品品牌均依原網站的資訊架構整理。</p><div className="service-grid">{services.map(([title, description, image], index) => <article className="service-card" key={title}><img src={image} alt="" loading="lazy" decoding="async" /><div className="service-content"><span>0{index + 1}</span><h3>{title}</h3><p>{description}</p><a href={catalogLink(title)}>查看產品分類 <b>→</b></a></div></article>)}</div></section>
-    <section className="brands" id="brands"><div className="shell brand-content"><div><div className="section-kicker">AGENCY BRAND</div><h2>代理品牌</h2><p>原網站列出 OPTIMUM、XAVIS、Smart Grader、MEAF、PROMIX、SBI、NIR、NIHOT、Matthiessen 與合軒等品牌及產品線。</p><a className="text-link" href={catalogLink('品牌介紹')}>查看完整代理產品 →</a></div><div className="brand-list"><span>OPTIMUM</span><span>XAVIS</span><span>SMART<br />GRADER</span><span>NIHOT</span><span>PROMIX</span><span>MEAF</span></div></div></section>
-    <section className="downloads shell" id="downloads"><div><div className="section-kicker">DOWNLOADS</div><h2>下載專區</h2></div><div>{downloadGroups[0].items.map((item) => <a href={`/downloads?collection=${encodeURIComponent(item)}`} key={item}>{item}<span>→</span></a>)}</div></section>
-    <section className="news shell" id="news"><div className="news-head"><div><div className="section-kicker">NEWS</div><h2>最新消息</h2></div><a href="/news">所有消息 →</a></div><div className="news-list">{newsPosts.map((post) => <article className="home-news-card" key={post.id}><a className="news-image" href={`/news?id=${post.id}`}><img src={post.image} alt={post.title} loading="lazy" decoding="async" /></a><div><h3>{post.title}</h3><p>{post.lead}</p><a className="news-more" href={`/news?id=${post.id}`}>了解更多 →</a></div></article>)}</div></section>
-    <footer id="contact"><div className="footer-main"><div className="shell footer-grid"><div><a href="/"><img src="/reference/logo.png" alt="UniRise 合軒科技有限公司" /></a><div className="footer-links">{navItems.map((item) => <a href={item.target} key={item.label}>{item.label}</a>)}</div><div className="social"><a href="https://www.facebook.com/%E5%90%88%E8%BB%92%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8-161123071369104" target="_blank" rel="noreferrer">f</a><a href="https://line.me/ti/p/W1QdEgfzdb" target="_blank" rel="noreferrer">LINE</a><a href="https://www.youtube.com/channel/UCuIR83-YHMNnVc8lbaDB2nQ" target="_blank" rel="noreferrer">▶</a></div></div><address><a href="tel:063319283">☎　06-3319283</a><a href="mailto:info-unirise@unirise.tw">✉　info-unirise@unirise.tw</a><a href="https://goo.gl/maps/oqLuxoMzVYdmJEwg9" target="_blank" rel="noreferrer">●　台南市東區裕義路598號</a></address></div></div><div className="footer-bottom"><div className="shell">Copyright © 2021 合軒科技有限公司 All Rights Reserved.</div></div></footer><a className="to-top" href="#top" aria-label="回到頁面頂端">TOP</a></main>;
+  const [slide, setSlide] = useState(0);
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<string | null>(null);
+  const [agencyStart, setAgencyStart] = useState(0);
+  const [agencyVisible, setAgencyVisible] = useState(4);
+
+  useEffect(() => {
+    const heroTimer = window.setInterval(() => setSlide(current => (current + 1) % 2), 5000);
+    const agencyTimer = window.setInterval(() => setAgencyStart(current => (current + 1) % agencies.length), 3000);
+    const resize = () => setAgencyVisible(window.innerWidth < 768 ? 1 : window.innerWidth < 992 ? 2 : window.innerWidth < 1200 ? 3 : 4);
+    resize(); window.addEventListener('resize', resize);
+    return () => { window.clearInterval(heroTimer); window.clearInterval(agencyTimer); window.removeEventListener('resize', resize); };
+  }, []);
+
+  const visibleAgencies = useMemo(() => Array.from({ length: agencyVisible }, (_, i) => agencies[(agencyStart + i) % agencies.length]), [agencyStart, agencyVisible]);
+  const moveAgency = (amount: number) => setAgencyStart(current => (current + amount + agencies.length) % agencies.length);
+
+  return <main id="top" className="original-home">
+    <header className="original-header">
+      <div className="original-header-top">
+        <div className="original-top-links"><a href="https://goo.gl/maps/dvcWWbp4xf8AZ3dF6" target="_blank" rel="noreferrer">公司地址</a><a href="/contact">聯絡我們</a><a href="/catalog"><i className="original-fa original-fa-search" aria-hidden="true" />搜尋</a></div>
+        <a href="/" aria-label="回到首頁"><img src="/reference/original/logo.png" width="347" height="90" alt="合軒科技有限公司" /></a>
+        <div className="original-top-links right"><a href="/inquiry"><i className="original-fa original-fa-cart" aria-hidden="true" />詢問車</a><button type="button">語系</button><span>Select Language⌄</span></div>
+      </div>
+      <nav className="original-main-nav" aria-label="主要選單">
+        <button className="original-mobile-toggle" type="button" onClick={() => setMobileMenu(value => !value)} aria-expanded={mobileMenu} aria-label="開啟選單">{mobileMenu ? <X/> : <Menu/>}</button>
+        <div className={`original-nav-list ${mobileMenu ? 'open' : ''}`}>
+          <div className={`original-nav-item ${mobilePanel==='industry'?'mobile-open':''}`}><a href={productHref('industry','73')}>產業服務</a><button className="original-submenu-toggle" type="button" onClick={()=>setMobilePanel(value=>value==='industry'?null:'industry')} aria-label="展開產業服務子選單" aria-expanded={mobilePanel==='industry'}><i className={`original-fa ${mobilePanel==='industry'?'original-fa-minus':'original-fa-plus'}`} aria-hidden="true"/></button><Dropdown groups={industryGroups} kind="industry"/></div>
+          <div className={`original-nav-item ${mobilePanel==='brand'?'mobile-open':''}`}><a href={productHref('brand','89')}>代理品牌</a><button className="original-submenu-toggle" type="button" onClick={()=>setMobilePanel(value=>value==='brand'?null:'brand')} aria-label="展開代理品牌子選單" aria-expanded={mobilePanel==='brand'}><i className={`original-fa ${mobilePanel==='brand'?'original-fa-minus':'original-fa-plus'}`} aria-hidden="true"/></button><Dropdown groups={brandGroups} kind="brand"/></div>
+          <div className="original-nav-item"><a href="/news">最新消息</a></div>
+          <div className={`original-nav-item ${mobilePanel==='downloads'?'mobile-open':''}`}><a href="/downloads">下載專區</a><button className="original-submenu-toggle" type="button" onClick={()=>setMobilePanel(value=>value==='downloads'?null:'downloads')} aria-label="展開下載專區子選單" aria-expanded={mobilePanel==='downloads'}><i className={`original-fa ${mobilePanel==='downloads'?'original-fa-minus':'original-fa-plus'}`} aria-hidden="true"/></button><div className="original-dropdown downloads-menu">{[['NIHOT-回收再生','3853'],['OPTIMUM-食材分選','77'],['PROMIX-塑膠化工','3854'],['XAVIS-X光檢測','78']].map(([label,id])=><a key={id} href={`/downloads?id=${id}`}>{label}</a>)}</div></div>
+          <div className="original-nav-item"><a href="/inquiry">詢價系統</a></div>
+          <div className="original-nav-item"><a href="/contact">聯絡我們</a></div>
+        </div>
+      </nav>
+    </header>
+
+    <section className="original-hero" aria-label="主視覺輪播">
+      {[
+        ['7ad461d02fa445546a8567d1c8293e3b.png','d714bdbb203af483c6cbbf4ebe90ba83.png'],
+        ['af0039c7a213a8374289c273de51f4f8.png','951780546b18659f46dcd675d14e19d3.png'],
+      ].map(([desktop,mobile],index)=><a href="/" className={`original-hero-slide ${slide===index?'active':''}`} aria-hidden={slide!==index} key={desktop}><picture><source media="(max-width:768px)" srcSet={`/reference/original/${mobile}`} /><img src={`/reference/original/${desktop}`} alt={`banner-0${index+1}`} /></picture></a>)}
+      <button type="button" className="original-hero-arrow prev" onClick={()=>setSlide(current=>(current+1)%2)} aria-label="Previous slide"><i className="original-fa original-fa-play" aria-hidden="true" /></button>
+      <button type="button" className="original-hero-arrow next" onClick={()=>setSlide(current=>(current+1)%2)} aria-label="Next slide"><i className="original-fa original-fa-play" aria-hidden="true" /></button>
+      <a className="original-scroll" href="#scroll"><img src="/reference/original/scrollDown_mouse.svg" alt="向下捲動" /></a>
+    </section>
+
+    <div id="scroll">
+      <section className="original-about">
+        <div className="original-about-inner">
+          <article>
+            <div className="original-about-title"><span>SOLUTION OVERVIEW</span><small>食品生產者到消費端的循環自動化方案</small></div>
+            <h2>我們提供</h2>
+            <ul><li>從天然或加工的食品原物料依顏色/外觀<br/>瑕疵透過自動化分選機完成品質等級分類</li><li>各類食品包裝型態的X光機檢查,為食品出廠前的安全把關</li><li>肉類及無刺鮮魚的高解析度X光機</li><li>食品容器生產的物理性發泡技術裝置</li><li>消費端廢棄物整體風選分類設備</li></ul>
+          </article>
+          <div className="original-about-image"><img src="/reference/original/indexAbout.png" alt="食品生產循環自動化方案" /></div>
+        </div>
+      </section>
+
+      <section className="original-features" aria-label="產業服務">
+        {featureCards.map(card=><article className="original-feature" key={card.id}>
+          <img src={card.image} alt="" />
+          <div className="original-feature-overlay"><div className="original-feature-border"><div><h2>{card.title}</h2><div className="original-feature-linkbox"><span className="original-feature-line"><img src="/reference/original/arrowR.png" alt="" /></span><a href={productHref('industry',card.id)}>Read More <img src="/reference/original/addWhite.png" alt="" /></a></div></div></div></div>
+        </article>)}
+      </section>
+
+      <section className="original-agency" id="brands">
+        <div className="original-container">
+          <div className="original-section-title"><span>AGENCY BRAND</span><small>代理品牌</small></div>
+          <div className="original-agency-carousel">
+            <button type="button" onClick={()=>moveAgency(-1)} aria-label="上一組品牌"><i className="original-fa original-fa-play" aria-hidden="true" /></button>
+            <div className="original-agency-list">{visibleAgencies.map(([image,title,id])=><article key={`${agencyStart}-${id}`}><a href={productHref('brand',id)}><img src={`/reference/original/${image}`} alt={title}/></a><h3>{title}</h3></article>)}</div>
+            <button type="button" onClick={()=>moveAgency(1)} aria-label="下一組品牌"><i className="original-fa original-fa-play" aria-hidden="true" /></button>
+          </div>
+        </div>
+      </section>
+
+      <section className="original-news" id="news">
+        <div className="original-container">
+          <div className="original-section-title"><span>NEWS</span><small>最新消息</small></div>
+          <div className="original-news-grid">{homeNews.map(([id,image,title,lead])=><article className="original-news-item" key={id}>
+            <a className="original-news-image" href={`/news?id=${id}`}><img src={`/reference/original/${image}`} alt={title}/></a>
+            <div><h3>{title}</h3><p>{lead}</p><a className="original-news-more" href={`/news?id=${id}`}>了解更多</a></div>
+          </article>)}</div>
+        </div>
+      </section>
+    </div>
+
+    <footer className="original-footer" id="contact">
+      <div className="original-container original-footer-grid">
+        <div><nav>{[['產業服務',productHref('industry','73')],['代理品牌',productHref('brand','89')],['最新消息','/news'],['下載專區','/downloads?id=3853'],['詢價系統','/inquiry'],['聯絡我們','/contact']].map(([label,href])=><a href={href} key={label}>{label}</a>)}</nav><div className="original-social"><a href="https://www.facebook.com/%E5%90%88%E8%BB%92%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8-161123071369104" target="_blank" rel="noreferrer" aria-label="Facebook"><i className="original-fa original-fa-facebook" aria-hidden="true" /></a><a href="https://line.me/ti/p/W1QdEgfzdb" target="_blank" rel="noreferrer" aria-label="LINE"><i className="original-icomoon original-line" aria-hidden="true" /></a><a href="https://www.youtube.com/channel/UCuIR83-YHMNnVc8lbaDB2nQ" target="_blank" rel="noreferrer" aria-label="YouTube"><i className="original-fa original-fa-youtube" aria-hidden="true" /></a><span aria-label="Instagram"><i className="original-fa original-fa-instagram" aria-hidden="true" /></span></div></div>
+        <div className="original-footer-info"><img src="/reference/original/logo_footer.svg" alt="合軒科技有限公司"/><a href="tel:06-3319283"><i className="original-fa original-fa-phone" aria-hidden="true" /><span> 06-3319283</span></a><a href="mailto:info-unirise@unirise.tw"><i className="original-fa original-fa-envelope" aria-hidden="true" />info-unirise@unirise.tw</a><a href="https://goo.gl/maps/oqLuxoMzVYdmJEwg9" target="_blank" rel="noreferrer"><i className="original-fa original-fa-map" aria-hidden="true" />台南市東區裕義路598號</a></div>
+      </div>
+      <div className="original-copyright"><div className="original-container">Copyright © 2021 合軒科技有限公司 All Rights Reserved.<span className="original-credit"><a href="https://www.buyersline.com.tw" target="_blank" rel="noreferrer"><img src="/reference/original/txt-copyright.svg" alt="網頁設計" />網頁設計</a><span><img src="/reference/original/txt-byBLC.svg" alt="BuyersLine Company" />by BLC</span></span></div></div>
+    </footer>
+    <a className="original-to-top" href="#top" aria-label="回到頂端"><img src="/reference/original/gotop.svg" alt=""/></a>
+  </main>;
 }
