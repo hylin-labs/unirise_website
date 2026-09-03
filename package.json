@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt"
@@ -48,6 +50,7 @@
     "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
+    "vitest": "^3.2.4",
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
