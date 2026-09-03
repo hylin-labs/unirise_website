@@ -46,6 +46,9 @@ class FakePreparedStatement {
     if (!match) throw new Error(`FakeD1 does not support this SQL: ${this.query}`);
     const columns = match[2].split(',').map((column) => column.trim());
     const tableRows = this.rows.get(match[1]) ?? [];
+    if (/insert\s+or\s+ignore/i.test(this.query) && tableRows.some((row) => row.id === this.values[columns.indexOf('id')])) {
+      return result([], 0);
+    }
     tableRows.push(Object.fromEntries(columns.map((column, index) => [column, this.values[index]])));
     this.rows.set(match[1], tableRows);
     return result([], 1);
@@ -57,6 +60,11 @@ class FakePreparedStatement {
   }
 
   async all<T = Row>(): Promise<FakeResult<T>> {
+    const countMatch = this.query.match(/select\s+count\(\*\)\s+as\s+(\w+)\s+from\s+(\w+)\s+where\s+(\w+)\s*=\s*\?/i);
+    if (countMatch) {
+      const count = (this.rows.get(countMatch[2]) ?? []).filter((row) => row[countMatch[3]] === this.values[0]).length;
+      return result([{ [countMatch[1]]: count } as T]);
+    }
     const match = this.query.match(/select\s+(.+?)\s+from\s+(\w+)\s+where\s+(\w+)\s*=\s*\?/i);
     if (!match) throw new Error(`FakeD1 does not support this SQL: ${this.query}`);
     const columns = match[1].split(',').map((column) => column.trim());

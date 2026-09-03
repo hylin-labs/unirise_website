@@ -2,6 +2,7 @@ import { newsPosts } from '../app/news-data';
 
 export type KnowledgeSource = { title: string; href: string };
 type KnowledgeChunk = KnowledgeSource & { content: string };
+export type LegacyKnowledge = KnowledgeChunk & { id: string };
 
 const catalogChunks: KnowledgeChunk[] = [
   { title: '公司服務領域', href: '/', content: '合軒科技的公開服務領域為食品分選、X 光檢測、回收再生與塑膠化工。天然或加工食品原物料可依顏色或外觀瑕疵由自動化分選機完成品質等級分類。各類食品包裝型態可透過 X 光檢查，作為食品出廠前的安全把關。' },
@@ -19,13 +20,23 @@ const catalogChunks: KnowledgeChunk[] = [
   { title: '下載專區', href: '/downloads?id=3853', content: '下載專區提供 NIHOT 回收再生、OPTIMUM 食材分選、PROMIX 塑膠化工及 XAVIS X 光檢測等分類的產品資料索取入口。' },
 ];
 
-const newsChunks: KnowledgeChunk[] = newsPosts.map((post) => ({
-  title: `最新消息：${post.title}`,
-  href: `/news?id=${post.id}`,
-  content: `${post.title}。${post.lead}。${post.highlights.join('。')}`,
-}));
+const catalogKnowledgeIds = [
+  'catalog-services', 'catalog-brands', 'catalog-optimum', 'catalog-xavis-xray', 'catalog-xavis-weight',
+  'catalog-smart-grader', 'catalog-meaf-promix', 'catalog-sbi', 'catalog-nir', 'catalog-nihot',
+  'catalog-matthiessen', 'catalog-contact', 'catalog-downloads',
+] as const;
 
-const knowledge = [...catalogChunks, ...newsChunks];
+export const legacyKnowledge: LegacyKnowledge[] = [
+  ...catalogChunks.map((chunk, index) => ({ id: catalogKnowledgeIds[index] ?? `catalog-${index}`, ...chunk })),
+  ...newsPosts.map((post) => ({
+    id: `news-${post.id}`,
+    title: `最新消息：${post.title}`,
+    href: `/news?id=${post.id}`,
+    content: `${post.title}。${post.lead}。${post.highlights.join('。')}`,
+  })),
+];
+
+const knowledge: KnowledgeChunk[] = legacyKnowledge.map(({ id: _id, ...chunk }) => chunk);
 
 function queryTerms(value: string) {
   const lower = value.toLowerCase();
