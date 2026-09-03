@@ -5,6 +5,19 @@ export const visitorStatsSchema = {
   totals: 'site_visitor_totals',
 } as const;
 
+export const uniriseSchema = {
+  adminUsers: 'admin_users',
+  adminLoginCodes: 'admin_login_codes',
+  adminSessions: 'admin_sessions',
+  adminAuditLog: 'admin_audit_log',
+  managedNews: 'managed_news',
+  managedDownloads: 'managed_downloads',
+  chatKnowledge: 'chat_knowledge',
+  chatLeads: 'chat_leads',
+  siteEvents: 'site_events',
+  chatQuestions: 'chat_question_log',
+} as const;
+
 export type VisitorStats = {
   total: number;
   today: number;

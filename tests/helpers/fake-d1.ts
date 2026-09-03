@@ -42,7 +42,7 @@ class FakePreparedStatement {
   }
 
   async run(): Promise<FakeResult<Row>> {
-    const match = this.query.match(/insert\s+into\s+(\w+)\s*\(([^)]+)\)\s*values\s*\(([^)]+)\)/i);
+    const match = this.query.match(/insert(?:\s+or\s+ignore)?\s+into\s+(\w+)\s*\(([^)]+)\)\s*values\s*\(([^)]+)\)/i);
     if (!match) throw new Error(`FakeD1 does not support this SQL: ${this.query}`);
     const columns = match[2].split(',').map((column) => column.trim());
     const tableRows = this.rows.get(match[1]) ?? [];
