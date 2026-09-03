@@ -3,11 +3,32 @@ import {
   clearAdminSessionCookie,
   createAdminSessionCookie,
   destroyAdminSession,
-  requestAdminCode,
+  requestAdminCode as requestAdminCodeWithPepper,
   requireAdmin,
-  verifyAdminCode,
+  verifyAdminCode as verifyAdminCodeWithPepper,
 } from '../lib/admin-auth';
 import { sendLoginCode } from '../lib/resend';
+import { createRequestCodeHandler } from '../app/api/admin/auth/request-code/route';
+import { createLogoutHandler } from '../app/api/admin/auth/logout/route';
+
+vi.mock('cloudflare:workers', () => ({ env: {} }));
+
+const TEST_PEPPER = 'unit-test-only-pepper';
+
+const requestAdminCode = (
+  db: D1Database,
+  email: string,
+  visitorIdentifier: string,
+  mailer: Parameters<typeof requestAdminCodeWithPepper>[3],
+) =>
+  requestAdminCodeWithPepper(db, email, visitorIdentifier, mailer, TEST_PEPPER);
+
+const verifyAdminCode = (
+  db: D1Database,
+  email: string,
+  code: string,
+  now = new Date(),
+) => verifyAdminCodeWithPepper(db, email, code, now, TEST_PEPPER);
 
 type Row = Record<string, unknown>;
 
@@ -124,6 +145,25 @@ class AuthDatabase {
   write(sql: string, values: unknown[]): number {
     const query = sql.replace(/\s+/g, ' ').trim().toLowerCase();
     if (query.startsWith('insert into admin_login_codes')) {
+      if (query.includes(' select ')) {
+        const emailPattern = likePattern(String(values[7]));
+        const emailCutoff = String(values[8]);
+        const emailLimit = Number(values[9]);
+        const visitorPattern = likePattern(String(values[10]));
+        const visitorCutoff = String(values[11]);
+        const visitorLimit = Number(values[12]);
+        const emailCount = this.codes.filter(
+          (row) =>
+            emailPattern.test(String(row.id)) &&
+            String(row.created_at) >= emailCutoff,
+        ).length;
+        const visitorCount = this.codes.filter(
+          (row) =>
+            visitorPattern.test(String(row.id)) &&
+            String(row.created_at) >= visitorCutoff,
+        ).length;
+        if (emailCount >= emailLimit || visitorCount >= visitorLimit) return 0;
+      }
       this.codes.push(rowFromInsert(sql, values));
       return 1;
     }
@@ -136,7 +176,9 @@ class AuthDatabase {
         (item) =>
           item.id === values[0] &&
           item.used_at == null &&
-          Number(item.attempts_remaining) > 0,
+          Number(item.attempts_remaining) > 0 &&
+          (!query.includes('expires_at > ?') ||
+            String(item.expires_at) > String(values[1])),
       );
       if (!row) return 0;
       row.attempts_remaining = Number(row.attempts_remaining) - 1;
@@ -147,7 +189,8 @@ class AuthDatabase {
         (item) =>
           item.id === values[1] &&
           item.used_at == null &&
-          Number(item.attempts_remaining) > 0,
+          (!query.includes('expires_at > ?') ||
+            String(item.expires_at) > String(values[2])),
       );
       if (!row) return 0;
       row.used_at = values[0];
@@ -172,7 +215,7 @@ class AuthDatabase {
 }
 
 function rowFromInsert(sql: string, values: unknown[]): Row {
-  const match = sql.match(/\(([^)]+)\)\s*values/i);
+  const match = sql.match(/\(([^)]+)\)\s*(?:values|select)/i);
   if (!match) throw new Error(`Cannot parse INSERT: ${sql}`);
   const columns = match[1].split(',').map((column) => column.trim());
   return Object.fromEntries(
@@ -182,6 +225,10 @@ function rowFromInsert(sql: string, values: unknown[]): Row {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function likePattern(value: string) {
+  return new RegExp(`^${value.split('%').map(escapeRegExp).join('.*')}$`);
 }
 
 describe('passwordless admin authentication', () => {
@@ -269,6 +316,32 @@ describe('passwordless admin authentication', () => {
     ).resolves.toBeNull();
   });
 
+  it('requires the server-only pepper to verify a code', async () => {
+    const database = new AuthDatabase();
+    let code = '';
+    await requestAdminCode(
+      database.d1,
+      'hungyu@gmail.com',
+      'visitor-a',
+      async (message) => {
+        code = message.code;
+      },
+    );
+
+    await expect(
+      verifyAdminCodeWithPepper(
+        database.d1,
+        'hungyu@gmail.com',
+        code,
+        new Date(),
+        'wrong-pepper',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      verifyAdminCode(database.d1, 'hungyu@gmail.com', code),
+    ).resolves.toMatchObject({ email: 'hungyu@gmail.com' });
+  });
+
   it('rejects expired codes and stops accepting guesses after five attempts', async () => {
     const expiredDatabase = new AuthDatabase();
     let expiredCode = '';
@@ -340,13 +413,109 @@ describe('passwordless admin authentication', () => {
     expect(JSON.stringify(database.codes)).not.toContain('hungyu@gmail.com');
   });
 
+  it('reserves concurrent email and visitor request capacity atomically', async () => {
+    const database = new AuthDatabase();
+    const deliveries: Array<{ to: string; code: string }> = [];
+
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        requestAdminCode(
+          database.d1,
+          'hungyu@gmail.com',
+          'shared-visitor',
+          async (message) => {
+            deliveries.push(message);
+          },
+        ),
+      ),
+    );
+
+    expect(deliveries).toHaveLength(3);
+    expect(database.codes).toHaveLength(3);
+  });
+
+  it('retains throttle accounting when delivery fails', async () => {
+    const database = new AuthDatabase();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await Promise.all(
+      Array.from({ length: 10 }, () =>
+        requestAdminCode(
+          database.d1,
+          'hungyu@gmail.com',
+          'shared-visitor',
+          async () => {
+            throw new Error('delivery unavailable');
+          },
+        ),
+      ),
+    );
+
+    expect(database.codes).toHaveLength(3);
+    expect(database.codes.every((row) => row.used_at != null)).toBe(true);
+    log.mockRestore();
+  });
+
+  it('allows only one session when the same valid code is verified in parallel', async () => {
+    const database = new AuthDatabase();
+    let code = '';
+    await requestAdminCode(
+      database.d1,
+      'hungyu@gmail.com',
+      'visitor-a',
+      async (message) => {
+        code = message.code;
+      },
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        verifyAdminCode(database.d1, 'hungyu@gmail.com', code),
+      ),
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(database.sessions).toHaveLength(1);
+    expect(database.codes[0].attempts_remaining).toBe(0);
+  });
+
   it('sets the session cookie with the required scope and security attributes', () => {
     expect(createAdminSessionCookie('opaque-token')).toBe(
-      'unirise_admin_session=opaque-token; Path=/admin; Max-Age=43200; HttpOnly; Secure; SameSite=Lax',
+      'unirise_admin_session=opaque-token; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax',
     );
     expect(clearAdminSessionCookie()).toBe(
-      'unirise_admin_session=; Path=/admin; Max-Age=0; HttpOnly; Secure; SameSite=Lax',
+      'unirise_admin_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax',
     );
+  });
+
+  it('authenticates an admin API request with the emitted root-scoped cookie', async () => {
+    const database = new AuthDatabase();
+    let code = '';
+    await requestAdminCode(
+      database.d1,
+      'hungyu@gmail.com',
+      'visitor-a',
+      async (message) => {
+        code = message.code;
+      },
+    );
+    const verified = await verifyAdminCode(
+      database.d1,
+      'hungyu@gmail.com',
+      code,
+    );
+    const setCookie = createAdminSessionCookie(verified?.sessionToken ?? '');
+    const cookie = setCookie.split(';', 1)[0];
+    const apiRequest = new Request('https://unirise.tw/api/admin/news', {
+      headers: { cookie },
+    });
+
+    expect(setCookie).toContain('Path=/;');
+    await expect(requireAdmin(apiRequest, database.d1)).resolves.toEqual({
+      id: 'admin-1',
+      email: 'hungyu@gmail.com',
+      role: 'admin',
+    });
   });
 
   it('authenticates and destroys an active session from the cookie', async () => {
@@ -405,6 +574,81 @@ describe('passwordless admin authentication', () => {
     vi.advanceTimersByTime(12 * 60 * 60 * 1000 + 1);
 
     await expect(requireAdmin(request, database.d1)).resolves.toBeNull();
+  });
+});
+
+describe('admin authentication routes', () => {
+  it('returns neutral acceptance without awaiting delivery work', async () => {
+    const database = new AuthDatabase();
+    const background: Promise<unknown>[] = [];
+    let deliveryStarted = false;
+    let releaseDelivery!: () => void;
+    const deliveryGate = new Promise<void>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const handler = createRequestCodeHandler({
+      db: database.d1,
+      codePepper: TEST_PEPPER,
+      mailer: async () => {
+        deliveryStarted = true;
+        await deliveryGate;
+      },
+      waitUntil: (promise) => background.push(promise),
+      onError: vi.fn(),
+    });
+
+    const response = await Promise.race([
+      handler(
+        new Request('https://unirise.tw/api/admin/auth/request-code', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://unirise.tw',
+          },
+          body: JSON.stringify({ email: 'hungyu@gmail.com' }),
+        }),
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('request awaited delivery')), 50),
+      ),
+    ]);
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ accepted: true });
+    await vi.waitFor(() => expect(deliveryStarted).toBe(true));
+    expect(background).toHaveLength(1);
+    releaseDelivery();
+    await background[0];
+  });
+
+  it('clears the browser cookie even when session revocation fails', async () => {
+    const failingDb = {
+      prepare: () => ({
+        bind: () => ({
+          run: async () => {
+            throw new Error('D1 unavailable');
+          },
+        }),
+      }),
+    } as unknown as D1Database;
+    const onError = vi.fn();
+    const handler = createLogoutHandler(failingDb, onError);
+
+    const response = await handler(
+      new Request('https://unirise.tw/api/admin/auth/logout', {
+        method: 'POST',
+        headers: {
+          cookie: 'unirise_admin_session=opaque-token',
+          Origin: 'https://unirise.tw',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Set-Cookie')).toBe(
+      'unirise_admin_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax',
+    );
+    expect(onError).toHaveBeenCalledOnce();
   });
 });
 

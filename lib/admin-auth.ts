@@ -1,7 +1,7 @@
 import { uniriseSchema } from '../db/schema';
 
 const ADMIN_SESSION_COOKIE = 'unirise_admin_session';
-const APPLICATION_HASH_SALT = 'unirise-admin-auth-v1';
+const APPLICATION_HASH_CONTEXT = 'unirise-admin-auth-v2';
 const CODE_LIFETIME_MS = 10 * 60 * 1000;
 const SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000;
 const REQUEST_WINDOW_MS = 10 * 60 * 1000;
@@ -45,16 +45,26 @@ async function hash(value: string) {
   );
 }
 
-async function hashIdentifier(kind: 'email' | 'visitor', value: string) {
-  return hash(`${APPLICATION_HASH_SALT}:${kind}:${value}`);
+async function keyedHash(pepper: string, value: string) {
+  if (!pepper) throw new Error('Admin authentication is not configured');
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(pepper),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  return bytesToHex(
+    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value)),
+  );
 }
 
-async function hashCode(id: string, code: string) {
-  return hash(`${APPLICATION_HASH_SALT}:code:${id}:${code}`);
+async function hashCode(id: string, code: string, pepper: string) {
+  return keyedHash(pepper, `${APPLICATION_HASH_CONTEXT}:code:${id}:${code}`);
 }
 
 async function hashSessionToken(token: string) {
-  return hash(`${APPLICATION_HASH_SALT}:session:${token}`);
+  return hash(`${APPLICATION_HASH_CONTEXT}:session:${token}`);
 }
 
 function randomDigits() {
@@ -102,22 +112,14 @@ function readCookie(request: Request, name: string) {
   }
 }
 
-async function requestCount(db: D1Database, idPattern: string, cutoff: string) {
-  const row = await db
-    .prepare(
-      `SELECT COUNT(*) AS count FROM ${uniriseSchema.adminLoginCodes} WHERE id LIKE ? AND created_at >= ?`,
-    )
-    .bind(idPattern, cutoff)
-    .first<{ count: number }>();
-  return Number(row?.count ?? 0);
-}
-
 export async function requestAdminCode(
   db: D1Database,
   email: string,
   visitorIdentifier: string,
   mailer: LoginCodeMailer,
+  codePepper: string,
 ): Promise<{ accepted: true }> {
+  if (!codePepper) throw new Error('Admin authentication is not configured');
   const normalizedEmail = normalizeEmail(email);
   const user = await db
     .prepare(
@@ -129,37 +131,52 @@ export async function requestAdminCode(
   if (!user || !safeRole(user.role)) return { accepted: true };
 
   const now = new Date();
-  const emailHash = await hashIdentifier('email', normalizedEmail);
-  const visitorHash = await hashIdentifier('visitor', visitorIdentifier);
+  const emailHash = await keyedHash(
+    codePepper,
+    `${APPLICATION_HASH_CONTEXT}:email:${normalizedEmail}`,
+  );
+  const visitorHash = await keyedHash(
+    codePepper,
+    `${APPLICATION_HASH_CONTEXT}:visitor:${visitorIdentifier}`,
+  );
   const cutoff = new Date(now.getTime() - REQUEST_WINDOW_MS).toISOString();
-  const [emailRequests, visitorRequests] = await Promise.all([
-    requestCount(db, `${emailHash}:%`, cutoff),
-    requestCount(db, `%:${visitorHash}:%`, cutoff),
-  ]);
-  if (
-    emailRequests >= MAX_REQUESTS_PER_WINDOW ||
-    visitorRequests >= MAX_REQUESTS_PER_WINDOW
-  ) {
-    return { accepted: true };
-  }
-
   const id = `${emailHash}:${visitorHash}:${crypto.randomUUID()}`;
   const code = randomDigits();
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + CODE_LIFETIME_MS).toISOString();
-  await db
+  const reserved = await db
     .prepare(
-      `INSERT INTO ${uniriseSchema.adminLoginCodes} (id, admin_user_id, code_hash, expires_at, attempts_remaining, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${uniriseSchema.adminLoginCodes} (id, admin_user_id, code_hash, expires_at, attempts_remaining, used_at, created_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM ${uniriseSchema.adminLoginCodes} WHERE id LIKE ? AND created_at >= ?) < ?
+         AND (SELECT COUNT(*) FROM ${uniriseSchema.adminLoginCodes} WHERE id LIKE ? AND created_at >= ?) < ?`,
     )
-    .bind(id, user.id, await hashCode(id, code), expiresAt, 5, null, createdAt)
+    .bind(
+      id,
+      user.id,
+      await hashCode(id, code, codePepper),
+      expiresAt,
+      5,
+      null,
+      createdAt,
+      `${emailHash}:%`,
+      cutoff,
+      MAX_REQUESTS_PER_WINDOW,
+      `%:${visitorHash}:%`,
+      cutoff,
+      MAX_REQUESTS_PER_WINDOW,
+    )
     .run();
+  if (reserved.meta.changes !== 1) return { accepted: true };
 
   try {
     await mailer({ to: normalizedEmail, code });
   } catch (error) {
     await db
-      .prepare(`DELETE FROM ${uniriseSchema.adminLoginCodes} WHERE id = ?`)
-      .bind(id)
+      .prepare(
+        `UPDATE ${uniriseSchema.adminLoginCodes} SET used_at = ? WHERE id = ? AND used_at IS NULL`,
+      )
+      .bind(new Date().toISOString(), id)
       .run();
     console.error('Admin login code delivery failed', error);
   }
@@ -172,9 +189,11 @@ export async function verifyAdminCode(
   email: string,
   code: string,
   now = new Date(),
+  codePepper: string,
 ): Promise<
   (AdminIdentity & { sessionToken: string; expiresAt: string }) | null
 > {
+  if (!codePepper) throw new Error('Admin authentication is not configured');
   const normalizedEmail = normalizeEmail(email);
   if (!/^\d{6}$/.test(code)) return null;
 
@@ -198,22 +217,26 @@ export async function verifyAdminCode(
   )
     return null;
 
-  const candidateHash = await hashCode(row.id, code);
-  if (!equalHashes(candidateHash, row.code_hash)) {
-    await db
-      .prepare(
-        `UPDATE ${uniriseSchema.adminLoginCodes} SET attempts_remaining = attempts_remaining - 1 WHERE id = ? AND attempts_remaining > 0 AND used_at IS NULL`,
-      )
-      .bind(row.id)
-      .run();
-    return null;
-  }
+  const reserved = await db
+    .prepare(
+      `UPDATE ${uniriseSchema.adminLoginCodes}
+       SET attempts_remaining = attempts_remaining - 1
+       WHERE id = ? AND attempts_remaining > 0 AND used_at IS NULL AND expires_at > ?`,
+    )
+    .bind(row.id, now.toISOString())
+    .run();
+  if (reserved.meta.changes !== 1) return null;
+
+  const candidateHash = await hashCode(row.id, code, codePepper);
+  if (!equalHashes(candidateHash, row.code_hash)) return null;
 
   const consumed = await db
     .prepare(
-      `UPDATE ${uniriseSchema.adminLoginCodes} SET used_at = ? WHERE id = ? AND attempts_remaining > 0 AND used_at IS NULL`,
+      `UPDATE ${uniriseSchema.adminLoginCodes}
+       SET used_at = ?
+       WHERE id = ? AND used_at IS NULL AND expires_at > ?`,
     )
-    .bind(now.toISOString(), row.id)
+    .bind(now.toISOString(), row.id, now.toISOString())
     .run();
   if (consumed.meta.changes !== 1) return null;
 
@@ -237,11 +260,11 @@ export async function verifyAdminCode(
 }
 
 export function createAdminSessionCookie(sessionToken: string) {
-  return `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(sessionToken)}; Path=/admin; Max-Age=${SESSION_LIFETIME_MS / 1000}; HttpOnly; Secure; SameSite=Lax`;
+  return `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(sessionToken)}; Path=/; Max-Age=${SESSION_LIFETIME_MS / 1000}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 export function clearAdminSessionCookie() {
-  return `${ADMIN_SESSION_COOKIE}=; Path=/admin; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+  return `${ADMIN_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
 export async function requireAdmin(

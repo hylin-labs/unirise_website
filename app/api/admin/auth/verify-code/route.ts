@@ -27,11 +27,26 @@ export async function POST(request: Request) {
       ? body.email
       : '';
   const code = typeof body.code === 'string' ? body.code : '';
-  const verified = await verifyAdminCode(
-    (env as unknown as { DB: D1Database }).DB,
-    email,
-    code,
-  );
+  const runtime = env as unknown as {
+    DB: D1Database;
+    ADMIN_AUTH_PEPPER?: string;
+  };
+  let verified;
+  try {
+    verified = await verifyAdminCode(
+      runtime.DB,
+      email,
+      code,
+      new Date(),
+      runtime.ADMIN_AUTH_PEPPER ?? '',
+    );
+  } catch (error) {
+    console.error('Admin login verification failed', error);
+    return Response.json(
+      { error: 'auth_unavailable' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
   if (!verified) {
     return Response.json(
       { error: 'invalid_code' },
