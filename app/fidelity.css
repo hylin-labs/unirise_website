@@ -46,6 +46,6 @@ button.original-inquiry-button:hover{background:#C7161E}
 }
 @media(max-width:640px){
   .original-feature-border{padding-left:5%}.original-feature-border>div{width:157px}.original-feature-linkbox{width:157px}.original-feature-line{flex-basis:55px;width:55px}.original-feature-line img{width:55px}.original-feature-border a{flex-basis:110px;width:110px;margin-left:-8px}
-  .original-agency .original-container{padding-top:20px}.original-agency-carousel{margin-top:15px}.original-agency-list h3{margin-top:0;font-size:24px}.original-copyright{font-size:13px}.original-credit{display:flex;margin-left:0}
+  .original-agency .original-container{padding-top:20px}.original-agency-carousel{margin-top:15px}.original-agency-list h3{margin-top:0;font-size:24px}.original-copyright{font-size:13px}
   .original-inner-content{padding-bottom:55px}.original-inner-title{margin-top:16px}.original-product-layout{gap:20px}.original-product-layout article{padding-top:0}
 }

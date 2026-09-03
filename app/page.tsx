@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import { VisitorCounter } from '../components/visitor-counter';
 
 type MenuGroup = { title: string; id: string; items: { label: string; id: string }[] };
 
@@ -154,7 +155,7 @@ export default function Home() {
         <div><nav>{[['產業服務',productHref('industry','73')],['代理品牌',productHref('brand','89')],['最新消息','/news'],['下載專區','/downloads?id=3853'],['詢價系統','/inquiry'],['聯絡我們','/contact']].map(([label,href])=><a href={href} key={label}>{label}</a>)}</nav><div className="original-social"><a href="https://www.facebook.com/%E5%90%88%E8%BB%92%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8-161123071369104" target="_blank" rel="noreferrer" aria-label="Facebook"><i className="original-fa original-fa-facebook" aria-hidden="true" /></a><a href="https://line.me/ti/p/W1QdEgfzdb" target="_blank" rel="noreferrer" aria-label="LINE"><i className="original-icomoon original-line" aria-hidden="true" /></a><a href="https://www.youtube.com/channel/UCuIR83-YHMNnVc8lbaDB2nQ" target="_blank" rel="noreferrer" aria-label="YouTube"><i className="original-fa original-fa-youtube" aria-hidden="true" /></a><span aria-label="Instagram"><i className="original-fa original-fa-instagram" aria-hidden="true" /></span></div></div>
         <div className="original-footer-info"><img src="/reference/original/logo_footer.svg" alt="合軒科技有限公司"/><a href="tel:06-3319283"><i className="original-fa original-fa-phone" aria-hidden="true" /><span> 06-3319283</span></a><a href="mailto:info-unirise@unirise.tw"><i className="original-fa original-fa-envelope" aria-hidden="true" />info-unirise@unirise.tw</a><a href="https://goo.gl/maps/oqLuxoMzVYdmJEwg9" target="_blank" rel="noreferrer"><i className="original-fa original-fa-map" aria-hidden="true" />台南市東區裕義路598號</a></div>
       </div>
-      <div className="original-copyright"><div className="original-container">Copyright © 2021 合軒科技有限公司 All Rights Reserved.<span className="original-credit"><a href="https://www.buyersline.com.tw" target="_blank" rel="noreferrer"><img src="/reference/original/txt-copyright.svg" alt="網頁設計" />網頁設計</a><span><img src="/reference/original/txt-byBLC.svg" alt="BuyersLine Company" />by BLC</span></span></div></div>
+      <div className="original-copyright"><div className="original-container">Copyright © 2021 合軒科技有限公司 All Rights Reserved.<VisitorCounter/></div></div>
     </footer>
     <a className="original-to-top" href="#top" aria-label="回到頂端"><img src="/reference/original/gotop.svg" alt=""/></a>
   </main>;

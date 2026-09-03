@@ -1,0 +1,13 @@
+.counter {
+  display: inline-block;
+  margin-left: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .counter {
+    display: block;
+    margin: 5px 0 0;
+  }
+}
