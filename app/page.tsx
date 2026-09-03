@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { VisitorCounter } from '../components/visitor-counter';
+import { SupportChat } from '../components/support-chat';
 
 type MenuGroup = { title: string; id: string; items: { label: string; id: string }[] };
 
@@ -158,5 +159,6 @@ export default function Home() {
       <div className="original-copyright"><div className="original-container">Copyright © 2021 合軒科技有限公司 All Rights Reserved.<VisitorCounter/></div></div>
     </footer>
     <a className="original-to-top" href="#top" aria-label="回到頂端"><img src="/reference/original/gotop.svg" alt=""/></a>
+    <SupportChat/>
   </main>;
 }
