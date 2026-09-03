@@ -3,6 +3,7 @@ import { isChatRequestAllowed } from '../../../lib/chat-rate-limit';
 
 const MAX_MESSAGE_LENGTH = 700;
 const GROQ_MODEL = 'openai/gpt-oss-20b';
+const brandAnswer = '我們代理的品牌包括：OPTIMUM、XAVIS、Smart Grader、MEAF、PROMIX、SBI、NIR、NIHOT、Matthiessen、合軒。如需進一步資訊，歡迎使用網站「詢價系統」或聯絡 06-3319283／info-unirise@unirise.tw。';
 
 const systemPrompt = `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
@@ -10,7 +11,8 @@ const systemPrompt = `你是「合軒科技有限公司」網站的測試版客�
 1. 食品分選：天然或加工食品原物料，可依顏色或外觀瑕疵由自動化分選機完成品質等級分類。
 2. X 光檢測：可檢查各類食品包裝型態，作為食品出廠前的安全把關；另有肉類及無刺鮮魚的高解析度 X 光機。
 3. 公司服務領域：食品分選、X 光檢測、回收再生、塑膠化工。
-4. 聯絡與詢價：可使用網站的「詢價系統」，或聯絡 06-3319283／info-unirise@unirise.tw。
+4. 代理品牌：OPTIMUM、XAVIS、Smart Grader、MEAF、PROMIX、SBI、NIR、NIHOT、Matthiessen、合軒。
+5. 聯絡與詢價：可使用網站的「詢價系統」，或聯絡 06-3319283／info-unirise@unirise.tw。
 
 除了以上事實，不可推論或補充任何產品能力、應用情境、規格、售價、交期、保固、認證、庫存或技術承諾。資訊不足時，直接說明網站未提供該細節，並建議使用「詢價系統」或聯絡合軒科技。
 不可要求或處理身分證、信用卡、帳密、完整地址或其他敏感個資。若問題與網站服務無關，請禮貌說明你僅能協助合軒科技的公開產品與聯絡資訊。`;
@@ -35,6 +37,10 @@ function visibleAnswer(answer: string) {
   return answer.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '').trim();
 }
 
+function asksForBrandList(message: string) {
+  return /代理.*品牌|品牌.*(?:有|哪些|介紹|列表)|有哪些.*品牌/.test(message);
+}
+
 export async function POST(request: Request) {
   const origin = request.headers.get('origin');
   if (origin && origin !== new URL(request.url).origin) return json('origin_not_allowed', 403);
@@ -52,6 +58,7 @@ export async function POST(request: Request) {
 
   const visitorId = request.headers.get('CF-Connecting-IP') ?? request.headers.get('x-forwarded-for') ?? 'unknown';
   if (!(await isChatRequestAllowed(env.DB as D1Database, visitorId))) return json('rate_limited', 429);
+  if (asksForBrandList(message)) return Response.json({ answer: brandAnswer }, { headers: { 'Cache-Control': 'no-store' } });
 
   try {
     const upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
