@@ -64,6 +64,8 @@
 }
 
 .user { margin-left: auto; background: #414042; color: #fff; }
+.sources { margin: -5px 0 11px; color: #6d6e71; font-size: 11px; line-height: 1.5; }
+.sources a { margin-left: 5px; color: #a80e15; text-decoration: underline; }
 .suggestions { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 10px; }
 .suggestions button { padding: 6px 8px; border: 1px solid #c7161d; background: #fff; color: #c7161d; font-size: 12px; cursor: pointer; }
 .suggestions button:hover { background: #c7161d; color: #fff; }

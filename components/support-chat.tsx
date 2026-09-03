@@ -4,7 +4,8 @@ import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
 import { FormEvent, useRef, useState } from 'react';
 import styles from './support-chat.module.css';
 
-type ChatMessage = { role: 'user' | 'assistant'; content: string };
+type ChatSource = { title: string; href: string };
+type ChatMessage = { role: 'user' | 'assistant'; content: string; sources?: ChatSource[] };
 
 const welcome: ChatMessage = { role: 'assistant', content: '您好，我是合軒科技的測試版網站助理。我可以協助您了解產品領域、代理品牌、聯絡方式與詢價流程。' };
 const suggestions = ['有哪些食品分選方案？', 'X 光檢測能協助什麼？', '如何聯絡或詢價？'];
@@ -37,8 +38,8 @@ export function SupportChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, history: priorMessages }),
       });
-      const payload = await response.json() as { answer?: string; error?: string };
-      setMessages((current) => [...current, { role: 'assistant', content: response.ok && payload.answer ? payload.answer : errorMessage(payload.error) }]);
+      const payload = await response.json() as { answer?: string; error?: string; sources?: ChatSource[] };
+      setMessages((current) => [...current, { role: 'assistant', content: response.ok && payload.answer ? payload.answer : errorMessage(payload.error), sources: response.ok ? payload.sources : undefined }]);
     } catch {
       setMessages((current) => [...current, { role: 'assistant', content: errorMessage() }]);
     } finally {
@@ -57,7 +58,7 @@ export function SupportChat() {
       <header className={styles.header}><div><strong>合軒科技網站助理</strong><small>測試版｜公開資訊問答</small></div><button className={styles.close} type="button" onClick={() => setOpen(false)} aria-label="關閉聊天"><X size={20} /></button></header>
       <div className={styles.messages} aria-live="polite">
         {messages.length === 1 && <div className={styles.suggestions}>{suggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => void send(suggestion)}>{suggestion}</button>)}</div>}
-        {messages.map((message, index) => <p className={`${styles.message} ${message.role === 'user' ? styles.user : ''}`} key={`${message.role}-${index}`}>{message.content}</p>)}
+        {messages.map((message, index) => <div key={`${message.role}-${index}`}><p className={`${styles.message} ${message.role === 'user' ? styles.user : ''}`}>{message.content}</p>{message.role === 'assistant' && message.sources && message.sources.length > 0 && <div className={styles.sources}>參考網站內容：{message.sources.map((source) => <a href={source.href} key={source.href}>{source.title}</a>)}</div>}</div>)}
         {sending && <p className={styles.message}><LoaderCircle size={16} aria-label="正在回覆" /></p>}
       </div>
       <p className={styles.notice}>請勿輸入個資、報價或其他機密資訊。</p>
