@@ -1,6 +1,7 @@
-import { uniriseSchema } from '../db/schema';
+import { uniriseSchema, visitorStatsSchema } from '../db/schema';
 
 const LEAD_LIMIT_PER_HOUR = 3;
+const EDGE_LIMIT_PER_MINUTE = 10;
 const LEAD_NOTIFICATION_TO = 'hungyu@gmail.com';
 
 export type LeadInput = {
@@ -52,7 +53,24 @@ function normalizeLead(input: LeadInput): NormalizedLead {
   if (input.requestType !== 'quote' && input.requestType !== 'specialist')
     throw new Error('invalid_lead');
   const email = requiredText(input.email, 320).toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+  const at = email.lastIndexOf('@');
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const domainLabels = domain.split('.');
+  if (
+    at <= 0 ||
+    email.indexOf('@') !== at ||
+    local.length > 64 ||
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..') ||
+    !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local) ||
+    domain.length > 253 ||
+    domainLabels.length < 2 ||
+    domainLabels.some(
+      (label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label),
+    )
+  )
     throw new Error('invalid_lead');
   return {
     requestType: input.requestType,
@@ -83,6 +101,40 @@ async function hashVisitorIdentifier(value: string) {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('');
+}
+
+function edgeMinuteBucket(now = new Date()) {
+  return `lead:${now.toISOString().slice(0, 16)}`;
+}
+
+export async function isLeadSubmissionRequestAllowed(
+  db: D1Database,
+  visitorIdentifier: string,
+) {
+  const visitorHash = await hashVisitorIdentifier(visitorIdentifier);
+  const bucket = edgeMinuteBucket();
+  const previousHour = edgeMinuteBucket(new Date(Date.now() - 60 * 60 * 1000));
+  await db
+    .prepare(
+      `DELETE FROM ${visitorStatsSchema.chatRateLimits}
+      WHERE bucket LIKE 'lead:%' AND bucket < ?`,
+    )
+    .bind(previousHour)
+    .run();
+  const reservation = await db
+    .prepare(
+      `INSERT INTO ${visitorStatsSchema.chatRateLimits}
+        (bucket, visitor_hash, request_count)
+      VALUES (?, ?, 1)
+      ON CONFLICT(bucket, visitor_hash)
+      DO UPDATE SET request_count = request_count + 1
+      RETURNING request_count`,
+    )
+    .bind(bucket, visitorHash)
+    .first<{ request_count: number }>();
+  return (
+    reservation !== null && reservation.request_count <= EDGE_LIMIT_PER_MINUTE
+  );
 }
 
 function notificationFor(lead: NormalizedLead): LeadNotification {
@@ -117,7 +169,7 @@ export async function createChatLead(
   const now = new Date();
   const createdAt = now.toISOString();
   const cutoff = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  const inserted = await db
+  const leadStatement = db
     .prepare(
       `INSERT INTO ${uniriseSchema.chatLeads} (
         id, request_type, name, email, company, phone, topic, message,
@@ -147,16 +199,15 @@ export async function createChatLead(
       visitorHash,
       cutoff,
       LEAD_LIMIT_PER_HOUR,
-    )
-    .run();
-
-  if ((inserted.meta.changes ?? 0) === 0) throw new Error('rate_limited');
-
-  await db
+    );
+  const eventStatement = db
     .prepare(
       `INSERT INTO ${uniriseSchema.siteEvents}
         (id, visitor_hash, name, path, metadata_json, occurred_at)
-      VALUES (?, ?, ?, ?, ?, ?)`,
+      SELECT ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM ${uniriseSchema.chatLeads} WHERE id = ?
+      )`,
     )
     .bind(
       crypto.randomUUID(),
@@ -165,12 +216,20 @@ export async function createChatLead(
       sourcePath,
       JSON.stringify({ requestType: lead.requestType }),
       createdAt,
-    )
-    .run();
+      id,
+    );
+  const [inserted] = await db.batch([leadStatement, eventStatement]);
+
+  if ((inserted.meta.changes ?? 0) === 0) throw new Error('rate_limited');
 
   try {
     await mailer(notificationFor(lead));
-    const deliveredAt = new Date().toISOString();
+  } catch {
+    return { id, emailDelivered: false };
+  }
+
+  const deliveredAt = new Date().toISOString();
+  try {
     await db
       .prepare(
         `UPDATE ${uniriseSchema.chatLeads}
@@ -178,8 +237,8 @@ export async function createChatLead(
       )
       .bind(1, deliveredAt, id)
       .run();
-    return { id, emailDelivered: true };
   } catch {
-    return { id, emailDelivered: false };
+    // Delivery succeeded; a tracking outage must not request duplicate mail.
   }
+  return { id, emailDelivered: true };
 }

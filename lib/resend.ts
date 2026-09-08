@@ -58,6 +58,7 @@ export async function sendLeadNotification(
   const fetchRequest = runtime.fetch ?? fetch;
   const response = await fetchRequest('https://api.resend.com/emails', {
     method: 'POST',
+    signal: AbortSignal.timeout(5_000),
     headers: {
       Authorization: `Bearer ${runtime.apiKey}`,
       'Content-Type': 'application/json',

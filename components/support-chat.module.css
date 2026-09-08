@@ -18,6 +18,10 @@
 .launcher:hover {
   background: #a80e15;
 }
+.launcher:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 
 .panel {
   position: fixed;
@@ -58,6 +62,10 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+.close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .messages {
@@ -147,6 +155,10 @@
   background: #c7161d;
   color: #fff;
 }
+.leadActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .leadForm {
   margin-top: 10px;
   padding: 10px;
@@ -167,6 +179,10 @@
   background: transparent;
   color: #414042;
   cursor: pointer;
+}
+.leadFormHeader button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .leadGrid {
   display: grid;

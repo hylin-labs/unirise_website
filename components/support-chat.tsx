@@ -1,7 +1,7 @@
 'use client';
 
 import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
-import { SyntheticEvent, useRef, useState } from 'react';
+import { SyntheticEvent, useEffect, useRef, useState } from 'react';
 import styles from './support-chat.module.css';
 
 type ChatSource = { title: string; href: string };
@@ -41,6 +41,12 @@ export function SupportChat() {
   const [leadSending, setLeadSending] = useState(false);
   const [leadStatus, setLeadStatus] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const leadOriginRef = useRef<HTMLButtonElement>(null);
+  const leadNameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (leadRequestType) leadNameRef.current?.focus();
+  }, [leadRequestType]);
 
   async function send(text = value) {
     const message = text.trim();
@@ -93,9 +99,20 @@ export function SupportChat() {
     void send();
   }
 
-  function openLeadForm(requestType: LeadRequestType) {
+  function openLeadForm(
+    requestType: LeadRequestType,
+    origin: HTMLButtonElement,
+  ) {
+    if (leadSending) return;
+    leadOriginRef.current = origin;
     setLeadRequestType(requestType);
     setLeadStatus('');
+  }
+
+  function closeLeadForm() {
+    if (leadSending) return;
+    setLeadRequestType(null);
+    window.setTimeout(() => leadOriginRef.current?.focus(), 0);
   }
 
   async function submitLead(event: SyntheticEvent<HTMLFormElement>) {
@@ -134,6 +151,7 @@ export function SupportChat() {
       }
       form.reset();
       setLeadRequestType(null);
+      window.setTimeout(() => leadOriginRef.current?.focus(), 0);
       setLeadStatus(
         payload.followUpDelayed
           ? '已收到您的需求；目前通知服務暫時無法使用，聯絡可能稍有延遲。'
@@ -163,6 +181,7 @@ export function SupportChat() {
               className={styles.close}
               type="button"
               onClick={() => setOpen(false)}
+              disabled={leadSending}
               aria-label="關閉聊天"
             >
               <X size={20} />
@@ -217,14 +236,20 @@ export function SupportChat() {
               <div className={styles.leadActions} aria-label="後續服務">
                 <button
                   type="button"
-                  onClick={() => openLeadForm('quote')}
+                  onClick={(event) =>
+                    openLeadForm('quote', event.currentTarget)
+                  }
+                  disabled={leadSending}
                   aria-pressed={leadRequestType === 'quote'}
                 >
                   索取報價
                 </button>
                 <button
                   type="button"
-                  onClick={() => openLeadForm('specialist')}
+                  onClick={(event) =>
+                    openLeadForm('specialist', event.currentTarget)
+                  }
+                  disabled={leadSending}
                   aria-pressed={leadRequestType === 'specialist'}
                 >
                   聯絡專員
@@ -234,6 +259,7 @@ export function SupportChat() {
                 <form
                   className={styles.leadForm}
                   onSubmit={submitLead}
+                  aria-busy={leadSending}
                   aria-label={
                     leadRequestType === 'quote'
                       ? '索取報價表單'
@@ -246,7 +272,8 @@ export function SupportChat() {
                     </strong>
                     <button
                       type="button"
-                      onClick={() => setLeadRequestType(null)}
+                      onClick={closeLeadForm}
+                      disabled={leadSending}
                       aria-label="關閉聯絡表單"
                     >
                       <X size={16} />
@@ -256,6 +283,7 @@ export function SupportChat() {
                     <label>
                       姓名<span aria-hidden="true">＊</span>
                       <input
+                        ref={leadNameRef}
                         name="name"
                         required
                         maxLength={120}
@@ -338,6 +366,7 @@ export function SupportChat() {
         className={styles.launcher}
         type="button"
         onClick={() => setOpen((value) => !value)}
+        disabled={leadSending}
         aria-expanded={open}
         aria-controls="support-chat-panel"
         aria-label={open ? '關閉聊天' : '開啟聊天'}
