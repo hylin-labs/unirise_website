@@ -1,4 +1,9 @@
 import { env } from 'cloudflare:workers';
+import {
+  hashVisitorIdentifier,
+  recordChatOutcome,
+  recordEvent,
+} from '../../../lib/analytics';
 import { isChatRequestAllowed } from '../../../lib/chat-rate-limit';
 import { retrieveSiteKnowledge } from '../../../lib/site-knowledge';
 
@@ -16,6 +21,7 @@ type ChatHandlerOptions = {
   groqApiKey?: string;
   isAllowed?: typeof isChatRequestAllowed;
   fetcher?: typeof fetch;
+  retrieveKnowledge?: typeof retrieveSiteKnowledge;
 };
 
 function validHistory(value: unknown): ChatMessage[] {
@@ -48,6 +54,7 @@ export function createChatHandler({
   groqApiKey,
   isAllowed = isChatRequestAllowed,
   fetcher = fetch,
+  retrieveKnowledge = retrieveSiteKnowledge,
 }: ChatHandlerOptions) {
   return async function handleChat(request: Request) {
     const origin = request.headers.get('origin');
@@ -70,14 +77,40 @@ export function createChatHandler({
       request.headers.get('CF-Connecting-IP') ??
       request.headers.get('x-forwarded-for') ??
       'unknown';
+    const visitorHash = await hashVisitorIdentifier(visitorId);
     let sources: Awaited<ReturnType<typeof retrieveSiteKnowledge>>;
     try {
       if (!(await isAllowed(db, visitorId))) return json('rate_limited', 429);
-      sources = await retrieveSiteKnowledge(db, message);
+      try {
+        await recordEvent(db, {
+          visitorHash,
+          name: 'chat_question',
+          path: '/chat',
+        });
+      } catch {
+        // Analytics must never prevent a visitor from using chat.
+      }
+      sources = await retrieveKnowledge(db, message);
     } catch {
       return json('chat_unavailable', 503);
     }
-    if (sources.length === 0)
+    if (sources.length === 0) {
+      try {
+        await Promise.all([
+          recordEvent(db, {
+            visitorHash,
+            name: 'chat_unanswered',
+            path: '/chat',
+          }),
+          recordChatOutcome(db, {
+            question: message,
+            outcome: 'unanswered',
+            sourceIds: [],
+          }),
+        ]);
+      } catch {
+        // Analytics must never prevent a visitor from receiving the fallback.
+      }
       return Response.json(
         {
           answer:
@@ -86,6 +119,7 @@ export function createChatHandler({
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );
+    }
     const websiteContext = sources
       .map((source) => `【${source.title}】\n${source.content}`)
       .join('\n\n');
@@ -124,6 +158,22 @@ export function createChatHandler({
         return json('chat_service_unavailable', 502);
       const cleanedAnswer = visibleAnswer(answer);
       if (!cleanedAnswer) return json('chat_service_unavailable', 502);
+      try {
+        await Promise.all([
+          recordEvent(db, {
+            visitorHash,
+            name: 'chat_answered',
+            path: '/chat',
+          }),
+          recordChatOutcome(db, {
+            question: message,
+            outcome: 'answered',
+            sourceIds: sources.map((source) => source.id),
+          }),
+        ]);
+      } catch {
+        // The successful answer is still returned if analytics is unavailable.
+      }
       return Response.json(
         {
           answer: cleanedAnswer,

@@ -1,0 +1,486 @@
+.loginPage {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: linear-gradient(145deg, #f4f2ef, #e8e5e1);
+  color: #2d2d2f;
+}
+.loginCard {
+  width: min(460px, 100%);
+  padding: 48px;
+  border-top: 5px solid #c7161e;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(24 24 24 / 12%);
+}
+.brand {
+  display: block;
+  width: 260px;
+  max-width: 100%;
+  margin: 0 auto 30px;
+}
+.brand img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.eyebrow {
+  margin: 0 0 7px;
+  color: #c7161e;
+  font:
+    700 11px Montserrat,
+    Arial,
+    sans-serif;
+  letter-spacing: 0.16em;
+}
+.loginCard h1 {
+  margin: 0;
+  font-size: 30px;
+}
+.intro {
+  margin: 10px 0 28px;
+  color: #666;
+  line-height: 1.7;
+}
+.loginForm {
+  display: grid;
+  gap: 12px;
+}
+.loginForm label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.loginForm input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font: inherit;
+}
+.loginForm input:focus {
+  outline: 3px solid rgb(199 22 30 / 15%);
+  border-color: #c7161e;
+}
+.loginForm button,
+.secondaryButton {
+  min-height: 46px;
+  border: 0;
+  border-radius: 4px;
+  background: #c7161e;
+  color: #fff;
+  font: 700 15px inherit;
+  cursor: pointer;
+}
+.loginForm button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.loginForm .secondaryButton {
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #444;
+}
+.loginStatus {
+  margin: 18px 0 0;
+  padding: 12px;
+  background: #f7f7f7;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.backLink {
+  display: inline-block;
+  margin-top: 25px;
+  color: #666;
+  font-size: 14px;
+}
+.dashboard {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  background: #f3f4f6;
+  color: #27272a;
+}
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 30px 22px;
+  display: flex;
+  flex-direction: column;
+  background: #28282b;
+  color: #fff;
+}
+.dashboardBrand {
+  display: block;
+  padding: 8px 10px 35px;
+  border-bottom: 1px solid rgb(255 255 255 / 12%);
+}
+.dashboardBrand img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.sidebar nav {
+  display: grid;
+  gap: 6px;
+  margin-top: 28px;
+}
+.sidebar nav button {
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #ddd;
+  font: 600 15px inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar nav button:hover,
+.sidebar nav .activeNav {
+  background: #c7161e;
+  color: #fff;
+}
+.account {
+  margin-top: auto;
+  padding: 18px 10px 0;
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  display: grid;
+  gap: 6px;
+}
+.account span {
+  color: #aaa;
+  font-size: 12px;
+}
+.account strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.account button {
+  width: max-content;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.workspace {
+  min-width: 0;
+  padding: 42px clamp(24px, 4vw, 64px) 80px;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 30px;
+  margin-bottom: 30px;
+}
+.topbar p {
+  margin: 0 0 8px;
+  color: #c7161e;
+  font:
+    700 11px Montserrat,
+    Arial,
+    sans-serif;
+  letter-spacing: 0.16em;
+}
+.topbar h1 {
+  margin: 0;
+  font-size: clamp(27px, 3vw, 40px);
+}
+.dateFilters {
+  display: flex;
+  gap: 12px;
+}
+.dateFilters label {
+  display: grid;
+  gap: 5px;
+  color: #666;
+  font-size: 12px;
+}
+.dateFilters input {
+  height: 39px;
+  padding: 0 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+}
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 16px;
+}
+.metricCard,
+.panel {
+  background: #fff;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgb(20 20 20 / 4%);
+}
+.metricCard {
+  padding: 22px;
+}
+.metricCard span {
+  display: block;
+  color: #71717a;
+  font-size: 13px;
+}
+.metricCard strong {
+  display: block;
+  margin-top: 8px;
+  font:
+    700 30px Montserrat,
+    Arial,
+    sans-serif;
+}
+.splitPanels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+.panel {
+  padding: 26px;
+}
+.panel h2 {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+.panelHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.panelHeading span {
+  padding: 4px 9px;
+  border-radius: 99px;
+  background: #f1f1f1;
+  color: #666;
+  font-size: 12px;
+}
+.panelIntro {
+  margin: -8px 0 24px;
+  color: #666;
+  font-size: 14px;
+}
+.ranking {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ranking li {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0;
+  border-top: 1px solid #eee;
+}
+.ranking li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #555;
+}
+.ranking li strong {
+  color: #c7161e;
+}
+.empty {
+  margin: 0;
+  padding: 26px;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  color: #777;
+  text-align: center;
+}
+.error {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-left: 4px solid #c7161e;
+  background: #fff0f1;
+  color: #94151b;
+}
+.loading {
+  padding: 60px;
+  background: #fff;
+  border-radius: 8px;
+  color: #666;
+  text-align: center;
+}
+.contentSections {
+  display: grid;
+  gap: 20px;
+}
+.contentList {
+  display: grid;
+}
+.contentRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 15px 0;
+  border-top: 1px solid #eee;
+}
+.contentRow:first-child {
+  border-top: 0;
+}
+.contentRow strong,
+.contentRow small {
+  display: block;
+}
+.contentRow small {
+  margin-top: 5px;
+  color: #777;
+  line-height: 1.5;
+}
+.contentRow > span {
+  padding: 5px 9px;
+  border-radius: 99px;
+  font-size: 12px;
+}
+.published {
+  background: #e4f5e9;
+  color: #1d6d37;
+}
+.draft {
+  background: #eee;
+  color: #666;
+}
+.contentRow button {
+  min-width: 88px;
+  padding: 8px 12px;
+  border: 1px solid #c7161e;
+  border-radius: 4px;
+  background: #fff;
+  color: #c7161e;
+  cursor: pointer;
+}
+.contentRow button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.leadGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+.leadCard {
+  padding: 20px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.leadHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: #777;
+  font-size: 12px;
+}
+.leadHeader span {
+  color: #c7161e;
+  font-weight: 700;
+}
+.leadCard h3 {
+  margin: 15px 0 8px;
+  font-size: 18px;
+}
+.leadCard > a {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 4px;
+  color: #9e1118;
+  overflow-wrap: anywhere;
+}
+.leadCard p {
+  margin: 16px 0;
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+.leadCard small {
+  color: #777;
+  line-height: 1.6;
+}
+.gapList {
+  display: grid;
+  gap: 12px;
+}
+.gapList article {
+  padding: 18px;
+  border-left: 3px solid #c7161e;
+  background: #f8f8f8;
+}
+.gapList time {
+  color: #777;
+  font-size: 12px;
+}
+.gapList p {
+  margin: 8px 0 0;
+  line-height: 1.65;
+}
+.loginCard,
+.dashboard {
+  font-family: Arial, 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+}
+@media (max-width: 1000px) {
+  .metricGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .leadGrid {
+    grid-template-columns: 1fr;
+  }
+  .topbar {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 720px) {
+  .dashboard {
+    display: block;
+  }
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+  }
+  .dashboardBrand {
+    width: 220px;
+    padding-bottom: 20px;
+  }
+  .sidebar nav {
+    grid-template-columns: repeat(2, 1fr);
+    margin-top: 18px;
+  }
+  .account {
+    margin-top: 22px;
+  }
+  .workspace {
+    padding: 28px 16px 60px;
+  }
+  .dateFilters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .metricGrid,
+  .splitPanels {
+    grid-template-columns: 1fr;
+  }
+  .contentRow {
+    grid-template-columns: 1fr auto;
+  }
+  .contentRow button {
+    grid-column: 1/-1;
+  }
+  .loginPage {
+    padding: 16px;
+  }
+  .loginCard {
+    padding: 32px 24px;
+  }
+}
