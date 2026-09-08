@@ -70,8 +70,13 @@ export function createChatHandler({
       request.headers.get('CF-Connecting-IP') ??
       request.headers.get('x-forwarded-for') ??
       'unknown';
-    if (!(await isAllowed(db, visitorId))) return json('rate_limited', 429);
-    const sources = await retrieveSiteKnowledge(db, message);
+    let sources: Awaited<ReturnType<typeof retrieveSiteKnowledge>>;
+    try {
+      if (!(await isAllowed(db, visitorId))) return json('rate_limited', 429);
+      sources = await retrieveSiteKnowledge(db, message);
+    } catch {
+      return json('chat_unavailable', 503);
+    }
     if (sources.length === 0)
       return Response.json(
         {

@@ -35,6 +35,9 @@ export function createKnowledgeAdminHandler(
     } catch {
       return json('invalid_request', 400);
     }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return json('invalid_content', 400);
+    }
 
     try {
       if (request.method === 'PATCH') {

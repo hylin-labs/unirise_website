@@ -226,11 +226,51 @@ function recordId(value: unknown) {
   return requiredText(value, 'id', 160);
 }
 
+function legacyId(value: unknown) {
+  const normalized = requiredText(value, 'legacyId', 160);
+  if (!/^\d+$/.test(normalized)) {
+    throw new ContentValidationError('legacyId must contain only digits');
+  }
+  return normalized;
+}
+
 function inputRecord<T extends object>(value: T): T {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ContentValidationError('content must be an object');
   }
   return value;
+}
+
+async function publicationForSave(
+  db: D1Database,
+  table: string,
+  id: string,
+  requestedStatus: ContentStatus,
+) {
+  const existing = await db
+    .prepare(
+      `SELECT id, status, published_at FROM ${table} WHERE id = ? LIMIT 1`,
+    )
+    .bind(id)
+    .first<{
+      id: string;
+      status: ContentStatus;
+      published_at: string | null;
+    }>();
+  if (!existing) {
+    if (requestedStatus !== 'draft') {
+      throw new ContentValidationError(
+        'new content must be saved as draft before publication',
+      );
+    }
+    return { status: 'draft' as const, publishedAt: null };
+  }
+  if (requestedStatus !== existing.status) {
+    throw new ContentValidationError(
+      'publication changes require the publication operation',
+    );
+  }
+  return { status: existing.status, publishedAt: existing.published_at };
 }
 
 export async function listPublishedNews(db: D1Database) {
@@ -360,7 +400,13 @@ export async function saveKnowledge(
   const href = safeUrl(content.href, 'href');
   const body = requiredText(content.body, 'body', 8000);
   const tags = textList(content.tags, 'tags', 12);
-  const status = contentStatus(content.status);
+  const requestedStatus = contentStatus(content.status);
+  const publication = await publicationForSave(
+    db,
+    uniriseSchema.chatKnowledge,
+    id,
+    requestedStatus,
+  );
   const timestamp = new Date().toISOString();
   await db.batch([
     db
@@ -375,8 +421,8 @@ export async function saveKnowledge(
         href,
         body,
         JSON.stringify(tags),
-        status,
-        publishedAt(status, timestamp),
+        publication.status,
+        publication.publishedAt,
         timestamp,
       ),
     auditStatement(
@@ -385,7 +431,7 @@ export async function saveKnowledge(
       'knowledge.saved',
       'knowledge',
       id,
-      { status, title, href, tags },
+      { status: publication.status, title, href, tags },
       timestamp,
     ),
   ]);
@@ -399,13 +445,19 @@ export async function saveNews(
 ) {
   const content = inputRecord(input);
   const id = recordId(content.id);
-  const legacyId = requiredText(content.legacyId, 'legacyId', 160);
+  const normalizedLegacyId = legacyId(content.legacyId);
   const title = requiredText(content.title, 'title', 160);
   const lead = requiredText(content.lead, 'body', 8000);
   const imageUrl = safeUrl(content.imageUrl, 'imageUrl');
   const highlights = textList(content.highlights, 'highlights', 12);
   const videoUrl = optionalUrl(content.videoUrl, 'videoUrl');
-  const status = contentStatus(content.status);
+  const requestedStatus = contentStatus(content.status);
+  const publication = await publicationForSave(
+    db,
+    uniriseSchema.managedNews,
+    id,
+    requestedStatus,
+  );
   const timestamp = new Date().toISOString();
   await db.batch([
     db
@@ -416,14 +468,14 @@ export async function saveNews(
       )
       .bind(
         id,
-        legacyId,
+        normalizedLegacyId,
         title,
         lead,
         imageUrl,
         JSON.stringify(highlights),
         videoUrl,
-        status,
-        publishedAt(status, timestamp),
+        publication.status,
+        publication.publishedAt,
         timestamp,
       ),
     auditStatement(
@@ -432,20 +484,20 @@ export async function saveNews(
       'news.saved',
       'news',
       id,
-      { status, legacyId, title },
+      { status: publication.status, legacyId: normalizedLegacyId, title },
       timestamp,
     ),
   ]);
   return {
     id,
-    legacyId,
+    legacyId: normalizedLegacyId,
     title,
     lead,
     imageUrl,
     highlights,
     videoUrl,
-    status,
-    publishedAt: publishedAt(status, timestamp),
+    status: publication.status,
+    publishedAt: publication.publishedAt,
   } satisfies ManagedNews;
 }
 
@@ -456,9 +508,15 @@ export async function saveDownload(
 ) {
   const content = inputRecord(input);
   const id = recordId(content.id);
-  const legacyId = requiredText(content.legacyId, 'legacyId', 160);
+  const normalizedLegacyId = legacyId(content.legacyId);
   const title = requiredText(content.title, 'title', 160);
-  const status = contentStatus(content.status);
+  const requestedStatus = contentStatus(content.status);
+  const publication = await publicationForSave(
+    db,
+    uniriseSchema.managedDownloads,
+    id,
+    requestedStatus,
+  );
   const timestamp = new Date().toISOString();
   await db.batch([
     db
@@ -469,10 +527,10 @@ export async function saveDownload(
       )
       .bind(
         id,
-        legacyId,
+        normalizedLegacyId,
         title,
-        status,
-        publishedAt(status, timestamp),
+        publication.status,
+        publication.publishedAt,
         timestamp,
       ),
     auditStatement(
@@ -481,16 +539,16 @@ export async function saveDownload(
       'download.saved',
       'download',
       id,
-      { status, legacyId, title },
+      { status: publication.status, legacyId: normalizedLegacyId, title },
       timestamp,
     ),
   ]);
   return {
     id,
-    legacyId,
+    legacyId: normalizedLegacyId,
     title,
-    status,
-    publishedAt: publishedAt(status, timestamp),
+    status: publication.status,
+    publishedAt: publication.publishedAt,
   } satisfies ManagedDownload;
 }
 

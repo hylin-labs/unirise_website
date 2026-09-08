@@ -67,7 +67,7 @@ export default async function NewsPage({ searchParams }: NewsPageProps) {
           <div className="news-card-grid">
             {posts.map((item) => (
               <article className="article news-card" key={item.id}>
-                <a href={`/news?id=${item.legacyId}`}>
+                <a href={`/news?id=${encodeURIComponent(item.legacyId)}`}>
                   <img
                     src={item.imageUrl}
                     alt={item.title}
@@ -78,7 +78,9 @@ export default async function NewsPage({ searchParams }: NewsPageProps) {
                 <time>NEWS</time>
                 <h2>{item.title}</h2>
                 <p>{item.lead}</p>
-                <a href={`/news?id=${item.legacyId}`}>了解更多 →</a>
+                <a href={`/news?id=${encodeURIComponent(item.legacyId)}`}>
+                  了解更多 →
+                </a>
               </article>
             ))}
           </div>

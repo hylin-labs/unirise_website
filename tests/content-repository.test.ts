@@ -8,7 +8,9 @@ import {
   saveDownload,
   saveKnowledge,
   saveNews,
+  setDownloadPublication,
   setKnowledgePublication,
+  setNewsPublication,
 } from '../lib/content-repository';
 import { createDownloadsAdminHandler } from '../app/api/admin/downloads/route';
 import { createKnowledgeAdminHandler } from '../app/api/admin/knowledge/route';
@@ -46,10 +48,11 @@ describe('managed content repository', () => {
         href: '/contact',
         body: 'public address',
         tags: [],
-        status: 'published',
+        status: 'draft',
       },
       admin,
     );
+    await setKnowledgePublication(database.d1, 'published', 'published', admin);
 
     await expect(
       retrievePublishedKnowledge(database.d1, 'address'),
@@ -101,6 +104,99 @@ describe('managed content repository', () => {
     ]);
   });
 
+  it('preserves the original publication time when editing published knowledge', async () => {
+    vi.useFakeTimers();
+    try {
+      const database = new ContentDatabase();
+      vi.setSystemTime(new Date('2026-09-01T00:00:00.000Z'));
+      await saveKnowledge(
+        database.d1,
+        {
+          id: 'published-edit',
+          title: 'Published title',
+          href: '/contact',
+          body: 'Original body',
+          tags: [],
+          status: 'draft',
+        },
+        admin,
+      );
+      await setKnowledgePublication(
+        database.d1,
+        'published-edit',
+        'published',
+        admin,
+      );
+
+      vi.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
+      await saveKnowledge(
+        database.d1,
+        {
+          id: 'published-edit',
+          title: 'Updated title',
+          href: '/contact',
+          body: 'Updated body',
+          tags: [],
+          status: 'published',
+        },
+        admin,
+      );
+
+      expect(database.rows('chat_knowledge')[0]).toEqual(
+        expect.objectContaining({
+          title: 'Updated title',
+          published_at: '2026-09-01T00:00:00.000Z',
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forces publication changes through the audited publication operation', async () => {
+    const database = new ContentDatabase();
+    await saveKnowledge(
+      database.d1,
+      {
+        id: 'save-publish',
+        title: 'Draft title',
+        href: '/contact',
+        body: 'Draft body',
+        tags: [],
+        status: 'draft',
+      },
+      admin,
+    );
+    await expect(
+      saveKnowledge(
+        database.d1,
+        {
+          id: 'save-publish',
+          title: 'Published title',
+          href: '/contact',
+          body: 'Published body',
+          tags: [],
+          status: 'published',
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ContentValidationError);
+    expect(database.rows('chat_knowledge')[0]).toEqual(
+      expect.objectContaining({ status: 'draft', published_at: null }),
+    );
+
+    await setKnowledgePublication(
+      database.d1,
+      'save-publish',
+      'published',
+      admin,
+    );
+    expect(database.rows('admin_audit_log').map((row) => row.action)).toEqual([
+      'knowledge.saved',
+      'knowledge.published',
+    ]);
+  });
+
   it('preserves published legacy news IDs and hides draft downloads', async () => {
     const database = new ContentDatabase();
     await saveNews(
@@ -113,10 +209,11 @@ describe('managed content repository', () => {
         imageUrl: '/images/news.jpg',
         highlights: ['Verified detail'],
         videoUrl: 'https://www.youtube.com/embed/example',
-        status: 'published',
+        status: 'draft',
       },
       admin,
     );
+    await setNewsPublication(database.d1, 'news-3944', 'published', admin);
     await saveDownload(
       database.d1,
       {
@@ -133,8 +230,14 @@ describe('managed content repository', () => {
         id: 'download-public',
         legacyId: '3853',
         title: 'NIHOT-回收再生',
-        status: 'published',
+        status: 'draft',
       },
+      admin,
+    );
+    await setDownloadPublication(
+      database.d1,
+      'download-public',
+      'published',
       admin,
     );
 
@@ -182,6 +285,24 @@ describe('managed content repository', () => {
     expect(database.rows('chat_knowledge')).toEqual([]);
     expect(database.rows('admin_audit_log')).toEqual([]);
   });
+
+  it('rejects a nonnumeric legacy ID', async () => {
+    const database = new ContentDatabase();
+    await expect(
+      saveDownload(
+        database.d1,
+        {
+          id: 'invalid-legacy-id',
+          legacyId: '3853&redirect=/admin',
+          title: 'Download title',
+          status: 'draft',
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ContentValidationError);
+    expect(database.rows('managed_downloads')).toEqual([]);
+    expect(database.rows('admin_audit_log')).toEqual([]);
+  });
 });
 
 describe('admin content APIs', () => {
@@ -204,19 +325,66 @@ describe('admin content APIs', () => {
     expect(await response.json()).toEqual({ error: 'unauthorized' });
   });
 
-  it('returns a validation response for a malformed authenticated payload', async () => {
+  it.each([
+    ['null', 'null'],
+    ['an array', '[]'],
+  ])(
+    'returns a validation response for %s authenticated content',
+    async (_name, body) => {
+      const database = new ContentDatabase();
+      const handler = createKnowledgeAdminHandler(
+        database.d1,
+        async () => admin,
+      );
+      const response = await handler(
+        new Request('https://unirise.example/api/admin/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'invalid_content' });
+      expect(database.rows('admin_audit_log')).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['news', createNewsAdminHandler],
+    ['downloads', createDownloadsAdminHandler],
+    ['knowledge', createKnowledgeAdminHandler],
+  ])(
+    'rejects a null authenticated %s publication payload',
+    async (_name, createHandler) => {
+      const database = new ContentDatabase();
+      const handler = createHandler(database.d1, async () => admin);
+      const response = await handler(
+        new Request('https://unirise.example/api/admin/content', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: 'null',
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'invalid_content' });
+      expect(database.rows('admin_audit_log')).toEqual([]);
+    },
+  );
+
+  it('rejects an unauthenticated mutation through the default requireAdmin path', async () => {
     const database = new ContentDatabase();
-    const handler = createKnowledgeAdminHandler(database.d1, async () => admin);
+    const handler = createKnowledgeAdminHandler(database.d1);
     const response = await handler(
       new Request('https://unirise.example/api/admin/knowledge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: 'null',
+        body: JSON.stringify({}),
       }),
     );
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'invalid_content' });
-    expect(database.rows('admin_audit_log')).toEqual([]);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'unauthorized' });
   });
 });

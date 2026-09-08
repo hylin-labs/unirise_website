@@ -50,7 +50,10 @@ export default async function DownloadsPage({
           ) : (
             <div className="download-list">
               {downloads.map((item) => (
-                <a href={`/downloads?id=${item.legacyId}`} key={item.id}>
+                <a
+                  href={`/downloads?id=${encodeURIComponent(item.legacyId)}`}
+                  key={item.id}
+                >
                   {item.title}
                   <span>→</span>
                 </a>
