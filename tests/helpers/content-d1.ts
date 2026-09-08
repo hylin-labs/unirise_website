@@ -59,13 +59,25 @@ class ContentPreparedStatement {
 
 export class ContentDatabase {
   private readonly tables = new Map<string, Row[]>();
+  private beforeBatch: (() => Promise<void>) | null = null;
+  private lastChanges = 0;
 
   readonly d1 = {
     prepare: (sql: string) =>
       new ContentPreparedStatement(sql, this) as unknown as D1PreparedStatement,
-    batch: async (statements: D1PreparedStatement[]) =>
-      Promise.all(statements.map((statement) => statement.run())),
+    batch: async (statements: D1PreparedStatement[]) => {
+      const beforeBatch = this.beforeBatch;
+      this.beforeBatch = null;
+      if (beforeBatch) await beforeBatch();
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
+    },
   } as unknown as D1Database;
+
+  interleaveNextBatch(operation: () => Promise<void>) {
+    this.beforeBatch = operation;
+  }
 
   rows(table: string) {
     return [...(this.tables.get(table) ?? [])];
@@ -111,6 +123,24 @@ export class ContentDatabase {
 
   write(sql: string, values: unknown[]) {
     const query = normalized(sql);
+    const conditionalInsert = sql.match(
+      /insert\s+into\s+(\w+)\s*\(([^)]+)\)\s*select/i,
+    );
+    if (conditionalInsert && query.includes('where changes() > 0')) {
+      if (this.lastChanges === 0) return 0;
+      const columns = conditionalInsert[2]
+        .split(',')
+        .map((column) => column.trim());
+      const row = Object.fromEntries(
+        columns.map((column, index) => [column, values[index]]),
+      );
+      const rows = this.tables.get(conditionalInsert[1]) ?? [];
+      rows.push(row);
+      this.tables.set(conditionalInsert[1], rows);
+      this.lastChanges = 1;
+      return 1;
+    }
+
     const insert = sql.match(/insert\s+into\s+(\w+)\s*\(([^)]+)\)\s*values/i);
     if (insert) {
       const columns = insert[2].split(',').map((column) => column.trim());
@@ -119,30 +149,42 @@ export class ContentDatabase {
       );
       const rows = this.tables.get(insert[1]) ?? [];
       const existingIndex = rows.findIndex((item) => item.id === row.id);
+      if (existingIndex >= 0 && query.includes('on conflict(id) do nothing')) {
+        this.lastChanges = 0;
+        return 0;
+      }
       if (existingIndex >= 0 && query.includes('on conflict')) {
         rows[existingIndex] = { ...rows[existingIndex], ...row };
       } else {
         rows.push(row);
       }
       this.tables.set(insert[1], rows);
+      this.lastChanges = 1;
       return 1;
     }
 
-    const update = query.match(
-      /update\s+(\w+)\s+set\s+(.+?)\s+where\s+id\s*=\s*\?/,
-    );
+    const update = query.match(/update\s+(\w+)\s+set\s+(.+?)\s+where\s+(.+)/);
     if (update) {
       const assignments = update[2].split(',').map((part) => part.trim());
-      const id = values[assignments.length];
-      const row = (this.tables.get(update[1]) ?? []).find(
-        (item) => item.id === id,
+      const predicates = update[3].split(/\s+and\s+/);
+      const predicateValues = values.slice(assignments.length);
+      const row = (this.tables.get(update[1]) ?? []).find((item) =>
+        predicates.every((predicate, index) => {
+          const match = predicate.match(/^(\w+)\s*(?:=|is)\s*\?$/);
+          if (!match) throw new Error(`Unsupported WHERE clause: ${predicate}`);
+          return item[match[1]] === predicateValues[index];
+        }),
       );
-      if (!row) return 0;
+      if (!row) {
+        this.lastChanges = 0;
+        return 0;
+      }
       assignments.forEach((assignment, index) => {
         const column = assignment.match(/^(\w+)\s*=\s*\?$/)?.[1];
         if (!column) throw new Error(`Unsupported SET clause: ${assignment}`);
         row[column] = values[index];
       });
+      this.lastChanges = 1;
       return 1;
     }
 

@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { requireAdmin } from '../../../../lib/admin-auth';
 import {
+  ContentConflictError,
   ContentValidationError,
   saveNews,
   setNewsPublication,
@@ -60,6 +61,9 @@ export function createNewsAdminHandler(
         { status: 201, headers: { 'Cache-Control': 'no-store' } },
       );
     } catch (error) {
+      if (error instanceof ContentConflictError) {
+        return json('content_conflict', 409);
+      }
       if (error instanceof ContentValidationError) {
         return json('invalid_content', 400);
       }

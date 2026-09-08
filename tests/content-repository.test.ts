@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AdminIdentity } from '../lib/admin-auth';
 import {
+  ContentConflictError,
   ContentValidationError,
   findPublishedNewsByLegacyId,
   listPublishedDownloads,
@@ -104,7 +105,7 @@ describe('managed content repository', () => {
     ]);
   });
 
-  it('preserves the original publication time when editing published knowledge', async () => {
+  it('preserves publication state and time when editing all published content types', async () => {
     vi.useFakeTimers();
     try {
       const database = new ContentDatabase();
@@ -127,6 +128,41 @@ describe('managed content repository', () => {
         'published',
         admin,
       );
+      await saveNews(
+        database.d1,
+        {
+          id: 'published-news-edit',
+          legacyId: '3944',
+          title: 'Original news title',
+          lead: 'Original lead',
+          imageUrl: '/images/news.jpg',
+          highlights: [],
+          status: 'draft',
+        },
+        admin,
+      );
+      await setNewsPublication(
+        database.d1,
+        'published-news-edit',
+        'published',
+        admin,
+      );
+      await saveDownload(
+        database.d1,
+        {
+          id: 'published-download-edit',
+          legacyId: '3853',
+          title: 'Original download title',
+          status: 'draft',
+        },
+        admin,
+      );
+      await setDownloadPublication(
+        database.d1,
+        'published-download-edit',
+        'published',
+        admin,
+      );
 
       vi.setSystemTime(new Date('2026-09-02T00:00:00.000Z'));
       await saveKnowledge(
@@ -141,16 +177,204 @@ describe('managed content repository', () => {
         },
         admin,
       );
+      await saveNews(
+        database.d1,
+        {
+          id: 'published-news-edit',
+          legacyId: '3944',
+          title: 'Updated news title',
+          lead: 'Updated lead',
+          imageUrl: '/images/news.jpg',
+          highlights: [],
+          status: 'published',
+        },
+        admin,
+      );
+      await saveDownload(
+        database.d1,
+        {
+          id: 'published-download-edit',
+          legacyId: '3853',
+          title: 'Updated download title',
+          status: 'published',
+        },
+        admin,
+      );
 
       expect(database.rows('chat_knowledge')[0]).toEqual(
         expect.objectContaining({
           title: 'Updated title',
+          status: 'published',
+          published_at: '2026-09-01T00:00:00.000Z',
+        }),
+      );
+      expect(database.rows('managed_news')[0]).toEqual(
+        expect.objectContaining({
+          title: 'Updated news title',
+          status: 'published',
+          published_at: '2026-09-01T00:00:00.000Z',
+        }),
+      );
+      expect(database.rows('managed_downloads')[0]).toEqual(
+        expect.objectContaining({
+          title: 'Updated download title',
+          status: 'published',
           published_at: '2026-09-01T00:00:00.000Z',
         }),
       );
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('rejects a knowledge save interleaved with publication', async () => {
+    const database = new ContentDatabase();
+    await saveKnowledge(
+      database.d1,
+      {
+        id: 'knowledge-publish-race',
+        title: 'Original title',
+        href: '/contact',
+        body: 'Original body',
+        tags: [],
+        status: 'draft',
+      },
+      admin,
+    );
+    database.interleaveNextBatch(() =>
+      setKnowledgePublication(
+        database.d1,
+        'knowledge-publish-race',
+        'published',
+        admin,
+      ),
+    );
+
+    await expect(
+      saveKnowledge(
+        database.d1,
+        {
+          id: 'knowledge-publish-race',
+          title: 'Stale title',
+          href: '/contact',
+          body: 'Stale body',
+          tags: [],
+          status: 'draft',
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ContentConflictError);
+    expect(database.rows('chat_knowledge')[0]).toEqual(
+      expect.objectContaining({
+        title: 'Original title',
+        status: 'published',
+        published_at: expect.any(String),
+      }),
+    );
+    expect(database.rows('admin_audit_log').map((row) => row.action)).toEqual([
+      'knowledge.saved',
+      'knowledge.published',
+    ]);
+  });
+
+  it('rejects a news save interleaved with unpublication', async () => {
+    const database = new ContentDatabase();
+    await saveNews(
+      database.d1,
+      {
+        id: 'news-unpublish-race',
+        legacyId: '3944',
+        title: 'Original title',
+        lead: 'Original lead',
+        imageUrl: '/images/news.jpg',
+        highlights: [],
+        status: 'draft',
+      },
+      admin,
+    );
+    await setNewsPublication(
+      database.d1,
+      'news-unpublish-race',
+      'published',
+      admin,
+    );
+    database.interleaveNextBatch(() =>
+      setNewsPublication(database.d1, 'news-unpublish-race', 'draft', admin),
+    );
+
+    await expect(
+      saveNews(
+        database.d1,
+        {
+          id: 'news-unpublish-race',
+          legacyId: '3944',
+          title: 'Stale title',
+          lead: 'Stale lead',
+          imageUrl: '/images/news.jpg',
+          highlights: [],
+          status: 'published',
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ContentConflictError);
+    expect(database.rows('managed_news')[0]).toEqual(
+      expect.objectContaining({
+        title: 'Original title',
+        status: 'draft',
+        published_at: null,
+      }),
+    );
+    expect(database.rows('admin_audit_log').map((row) => row.action)).toEqual([
+      'news.saved',
+      'news.published',
+      'news.unpublished',
+    ]);
+  });
+
+  it('rejects a download save interleaved with publication', async () => {
+    const database = new ContentDatabase();
+    await saveDownload(
+      database.d1,
+      {
+        id: 'download-publish-race',
+        legacyId: '3853',
+        title: 'Original title',
+        status: 'draft',
+      },
+      admin,
+    );
+    database.interleaveNextBatch(() =>
+      setDownloadPublication(
+        database.d1,
+        'download-publish-race',
+        'published',
+        admin,
+      ),
+    );
+
+    await expect(
+      saveDownload(
+        database.d1,
+        {
+          id: 'download-publish-race',
+          legacyId: '3853',
+          title: 'Stale title',
+          status: 'draft',
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ContentConflictError);
+    expect(database.rows('managed_downloads')[0]).toEqual(
+      expect.objectContaining({
+        title: 'Original title',
+        status: 'published',
+        published_at: expect.any(String),
+      }),
+    );
+    expect(database.rows('admin_audit_log').map((row) => row.action)).toEqual([
+      'download.saved',
+      'download.published',
+    ]);
   });
 
   it('forces publication changes through the audited publication operation', async () => {
@@ -386,5 +610,49 @@ describe('admin content APIs', () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'unauthorized' });
+  });
+
+  it('returns 409 when a publication change wins a concurrent save', async () => {
+    const database = new ContentDatabase();
+    await saveKnowledge(
+      database.d1,
+      {
+        id: 'api-save-race',
+        title: 'Original title',
+        href: '/contact',
+        body: 'Original body',
+        tags: [],
+        status: 'draft',
+      },
+      admin,
+    );
+    database.interleaveNextBatch(() =>
+      setKnowledgePublication(database.d1, 'api-save-race', 'published', admin),
+    );
+    const handler = createKnowledgeAdminHandler(database.d1, async () => admin);
+
+    const response = await handler(
+      new Request('https://unirise.example/api/admin/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: 'api-save-race',
+          title: 'Stale title',
+          href: '/contact',
+          body: 'Stale body',
+          tags: [],
+          status: 'draft',
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'content_conflict' });
+    expect(database.rows('chat_knowledge')[0]).toEqual(
+      expect.objectContaining({
+        title: 'Original title',
+        status: 'published',
+      }),
+    );
   });
 });

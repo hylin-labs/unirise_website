@@ -95,6 +95,13 @@ export class ContentValidationError extends Error {
   }
 }
 
+export class ContentConflictError extends Error {
+  constructor() {
+    super('content changed while it was being saved');
+    this.name = 'ContentConflictError';
+  }
+}
+
 function requiredText(value: unknown, field: string, maximum: number) {
   if (typeof value !== 'string') {
     throw new ContentValidationError(`${field} must be text`);
@@ -221,6 +228,32 @@ function auditStatement(
     );
 }
 
+function conditionalAuditStatement(
+  db: D1Database,
+  actor: AdminIdentity,
+  action: string,
+  targetType: string,
+  targetId: string,
+  detail: Record<string, unknown>,
+  timestamp: string,
+) {
+  return db
+    .prepare(
+      `INSERT INTO ${uniriseSchema.adminAuditLog} (id, admin_user_id, action, target_type, target_id, detail_json, created_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?
+       WHERE changes() > 0`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      actor.id,
+      action,
+      targetType,
+      targetId,
+      JSON.stringify(detail),
+      timestamp,
+    );
+}
+
 function recordId(value: unknown) {
   if (value == null || value === '') return crypto.randomUUID();
   return requiredText(value, 'id', 160);
@@ -249,13 +282,14 @@ async function publicationForSave(
 ) {
   const existing = await db
     .prepare(
-      `SELECT id, status, published_at FROM ${table} WHERE id = ? LIMIT 1`,
+      `SELECT id, status, published_at, updated_at FROM ${table} WHERE id = ? LIMIT 1`,
     )
     .bind(id)
     .first<{
       id: string;
       status: ContentStatus;
       published_at: string | null;
+      updated_at: string | null;
     }>();
   if (!existing) {
     if (requestedStatus !== 'draft') {
@@ -263,14 +297,33 @@ async function publicationForSave(
         'new content must be saved as draft before publication',
       );
     }
-    return { status: 'draft' as const, publishedAt: null };
+    return {
+      exists: false as const,
+      status: 'draft' as const,
+      publishedAt: null,
+      updatedAt: null,
+    };
   }
   if (requestedStatus !== existing.status) {
     throw new ContentValidationError(
       'publication changes require the publication operation',
     );
   }
-  return { status: existing.status, publishedAt: existing.published_at };
+  return {
+    exists: true as const,
+    status: existing.status,
+    publishedAt: existing.published_at,
+    updatedAt: existing.updated_at,
+  };
+}
+
+async function commitContentSave(
+  db: D1Database,
+  write: D1PreparedStatement,
+  audit: D1PreparedStatement,
+) {
+  const [result] = await db.batch([write, audit]);
+  if (result.meta.changes !== 1) throw new ContentConflictError();
 }
 
 export async function listPublishedNews(db: D1Database) {
@@ -408,24 +461,44 @@ export async function saveKnowledge(
     requestedStatus,
   );
   const timestamp = new Date().toISOString();
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO ${uniriseSchema.chatKnowledge} (id, title, href, body, tags_json, status, published_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET title = excluded.title, href = excluded.href, body = excluded.body, tags_json = excluded.tags_json, status = excluded.status, published_at = excluded.published_at, updated_at = excluded.updated_at`,
-      )
-      .bind(
-        id,
-        title,
-        href,
-        body,
-        JSON.stringify(tags),
-        publication.status,
-        publication.publishedAt,
-        timestamp,
-      ),
-    auditStatement(
+  const write = publication.exists
+    ? db
+        .prepare(
+          `UPDATE ${uniriseSchema.chatKnowledge}
+           SET title = ?, href = ?, body = ?, tags_json = ?, updated_at = ?
+           WHERE id = ? AND status = ? AND published_at IS ? AND updated_at IS ?`,
+        )
+        .bind(
+          title,
+          href,
+          body,
+          JSON.stringify(tags),
+          timestamp,
+          id,
+          publication.status,
+          publication.publishedAt,
+          publication.updatedAt,
+        )
+    : db
+        .prepare(
+          `INSERT INTO ${uniriseSchema.chatKnowledge} (id, title, href, body, tags_json, status, published_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO NOTHING`,
+        )
+        .bind(
+          id,
+          title,
+          href,
+          body,
+          JSON.stringify(tags),
+          publication.status,
+          publication.publishedAt,
+          timestamp,
+        );
+  await commitContentSave(
+    db,
+    write,
+    conditionalAuditStatement(
       db,
       actor,
       'knowledge.saved',
@@ -434,7 +507,7 @@ export async function saveKnowledge(
       { status: publication.status, title, href, tags },
       timestamp,
     ),
-  ]);
+  );
   return { id, title, href, content: body, tags } satisfies KnowledgeSource;
 }
 
@@ -459,26 +532,48 @@ export async function saveNews(
     requestedStatus,
   );
   const timestamp = new Date().toISOString();
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO ${uniriseSchema.managedNews} (id, legacy_id, title, lead, image_url, highlights_json, video_url, status, published_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET legacy_id = excluded.legacy_id, title = excluded.title, lead = excluded.lead, image_url = excluded.image_url, highlights_json = excluded.highlights_json, video_url = excluded.video_url, status = excluded.status, published_at = excluded.published_at, updated_at = excluded.updated_at`,
-      )
-      .bind(
-        id,
-        normalizedLegacyId,
-        title,
-        lead,
-        imageUrl,
-        JSON.stringify(highlights),
-        videoUrl,
-        publication.status,
-        publication.publishedAt,
-        timestamp,
-      ),
-    auditStatement(
+  const write = publication.exists
+    ? db
+        .prepare(
+          `UPDATE ${uniriseSchema.managedNews}
+           SET legacy_id = ?, title = ?, lead = ?, image_url = ?, highlights_json = ?, video_url = ?, updated_at = ?
+           WHERE id = ? AND status = ? AND published_at IS ? AND updated_at IS ?`,
+        )
+        .bind(
+          normalizedLegacyId,
+          title,
+          lead,
+          imageUrl,
+          JSON.stringify(highlights),
+          videoUrl,
+          timestamp,
+          id,
+          publication.status,
+          publication.publishedAt,
+          publication.updatedAt,
+        )
+    : db
+        .prepare(
+          `INSERT INTO ${uniriseSchema.managedNews} (id, legacy_id, title, lead, image_url, highlights_json, video_url, status, published_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO NOTHING`,
+        )
+        .bind(
+          id,
+          normalizedLegacyId,
+          title,
+          lead,
+          imageUrl,
+          JSON.stringify(highlights),
+          videoUrl,
+          publication.status,
+          publication.publishedAt,
+          timestamp,
+        );
+  await commitContentSave(
+    db,
+    write,
+    conditionalAuditStatement(
       db,
       actor,
       'news.saved',
@@ -487,7 +582,7 @@ export async function saveNews(
       { status: publication.status, legacyId: normalizedLegacyId, title },
       timestamp,
     ),
-  ]);
+  );
   return {
     id,
     legacyId: normalizedLegacyId,
@@ -518,22 +613,40 @@ export async function saveDownload(
     requestedStatus,
   );
   const timestamp = new Date().toISOString();
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO ${uniriseSchema.managedDownloads} (id, legacy_id, title, status, published_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET legacy_id = excluded.legacy_id, title = excluded.title, status = excluded.status, published_at = excluded.published_at, updated_at = excluded.updated_at`,
-      )
-      .bind(
-        id,
-        normalizedLegacyId,
-        title,
-        publication.status,
-        publication.publishedAt,
-        timestamp,
-      ),
-    auditStatement(
+  const write = publication.exists
+    ? db
+        .prepare(
+          `UPDATE ${uniriseSchema.managedDownloads}
+           SET legacy_id = ?, title = ?, updated_at = ?
+           WHERE id = ? AND status = ? AND published_at IS ? AND updated_at IS ?`,
+        )
+        .bind(
+          normalizedLegacyId,
+          title,
+          timestamp,
+          id,
+          publication.status,
+          publication.publishedAt,
+          publication.updatedAt,
+        )
+    : db
+        .prepare(
+          `INSERT INTO ${uniriseSchema.managedDownloads} (id, legacy_id, title, status, published_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO NOTHING`,
+        )
+        .bind(
+          id,
+          normalizedLegacyId,
+          title,
+          publication.status,
+          publication.publishedAt,
+          timestamp,
+        );
+  await commitContentSave(
+    db,
+    write,
+    conditionalAuditStatement(
       db,
       actor,
       'download.saved',
@@ -542,7 +655,7 @@ export async function saveDownload(
       { status: publication.status, legacyId: normalizedLegacyId, title },
       timestamp,
     ),
-  ]);
+  );
   return {
     id,
     legacyId: normalizedLegacyId,
