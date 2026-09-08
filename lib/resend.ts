@@ -41,3 +41,36 @@ export async function sendLoginCode(
   if (!response.ok)
     throw new Error(`Resend delivery failed with status ${response.status}`);
 }
+
+export async function sendLeadNotification(
+  message: {
+    to: string;
+    replyTo: string;
+    subject: string;
+    text: string;
+  },
+  runtime: ResendRuntime,
+): Promise<void> {
+  if (typeof window !== 'undefined')
+    throw new Error('Resend mail can only be sent from the server');
+  if (!runtime.apiKey || !runtime.fromEmail)
+    throw new Error('Resend is not configured');
+  const fetchRequest = runtime.fetch ?? fetch;
+  const response = await fetchRequest('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${runtime.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: runtime.fromEmail,
+      to: [message.to],
+      reply_to: message.replyTo,
+      subject: message.subject,
+      text: message.text,
+      html: `<p>${escapeHtml(message.text).replace(/\n/g, '<br>')}</p>`,
+    }),
+  });
+  if (!response.ok)
+    throw new Error(`Resend delivery failed with status ${response.status}`);
+}
