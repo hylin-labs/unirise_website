@@ -1,14 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createElement } from 'react';
+import { AdminLoginForm } from '../components/admin-login-form';
 import { createAnalyticsHandler } from '../app/api/analytics/route';
 import { createChatHandler } from '../app/api/chat/route';
 import {
   getDashboardMetrics,
+  dashboardBounds,
+  hashVisitorIdentifier,
   recordChatOutcome,
   recordEvent,
   sanitizeQuestion,
 } from '../lib/analytics';
 
 vi.mock('cloudflare:workers', () => ({ env: {} }));
+
+const TEST_ANALYTICS_PEPPER = 'analytics-test-pepper-at-least-32-characters';
 
 type Row = Record<string, unknown>;
 
@@ -59,6 +66,7 @@ class AnalyticsDatabase {
   readonly questions: Row[] = [];
   readonly leads: Row[] = [];
   readonly rateLimits: Row[] = [];
+  readonly publishedDownloadIds = new Set(['78']);
 
   readonly d1 = {
     prepare: (sql: string) =>
@@ -116,6 +124,16 @@ class AnalyticsDatabase {
         request_count: 1,
       });
       return [{ request_count: 1 }];
+    }
+
+    if (
+      query.includes('from managed_downloads') &&
+      query.includes('legacy_id = ?')
+    ) {
+      return this.publishedDownloadIds.has(String(values[0])) &&
+        values[1] === 'published'
+        ? [{ id: `download-${String(values[0])}` }]
+        : [];
     }
 
     if (
@@ -316,6 +334,52 @@ describe('analytics metrics', () => {
     expect(JSON.stringify(payload)).not.toContain('legacy@example.com');
     expect(JSON.stringify(payload)).not.toContain('06-3319283');
   });
+
+  it('uses inclusive Asia/Taipei calendar days for dashboard bounds', () => {
+    expect(dashboardBounds({ from: '2026-09-01', to: '2026-09-01' })).toEqual({
+      from: '2026-08-31T16:00:00.000Z',
+      to: '2026-09-01T16:00:00.000Z',
+    });
+  });
+
+  it('domain-separates visitor identifiers with a keyed server secret', async () => {
+    const visitor = await hashVisitorIdentifier(
+      '203.0.113.44',
+      TEST_ANALYTICS_PEPPER,
+      'chat-visitor',
+    );
+    const throttle = await hashVisitorIdentifier(
+      '203.0.113.44',
+      TEST_ANALYTICS_PEPPER,
+      'analytics-throttle',
+    );
+
+    expect(visitor).toMatch(/^[a-f0-9]{64}$/);
+    expect(visitor).not.toBe(throttle);
+    expect(visitor).not.toBe(
+      await hashVisitorIdentifier(
+        '203.0.113.44',
+        'different-analytics-pepper-at-least-32-characters',
+        'chat-visitor',
+      ),
+    );
+  });
+
+  it.each([
+    '我的密碼是 super-secret-123，請幫我登入',
+    '信用卡是 4111 1111 1111 1111',
+    '身分證 A123456789，地址台南市東區裕義路598號',
+  ])('refuses to persist broadly sensitive chat text: %s', async (question) => {
+    const database = new AnalyticsDatabase();
+
+    await recordChatOutcome(database.d1, {
+      question,
+      outcome: 'unanswered',
+      sourceIds: [],
+    });
+
+    expect(database.questions).toEqual([]);
+  });
 });
 
 describe('analytics route boundaries', () => {
@@ -363,7 +427,10 @@ describe('analytics route boundaries', () => {
 
   it('stores a public page event with only a hashed cookie identifier and allowlisted metadata', async () => {
     const database = new AnalyticsDatabase();
-    const handler = createAnalyticsHandler({ db: database.d1 });
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
 
     const response = await handler(
       new Request('https://unirise.tw/api/analytics', {
@@ -371,6 +438,7 @@ describe('analytics route boundaries', () => {
         headers: {
           Origin: 'https://unirise.tw',
           Cookie: 'unirise_visitor=opaque-browser-id',
+          'CF-Connecting-IP': '203.0.113.12',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -444,7 +512,10 @@ describe('analytics route boundaries', () => {
 
   it('rate-limits repeated event writes for one anonymous visitor', async () => {
     const database = new AnalyticsDatabase();
-    const handler = createAnalyticsHandler({ db: database.d1 });
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
     const responses: Response[] = [];
 
     for (let attempt = 0; attempt < 61; attempt += 1) {
@@ -455,6 +526,7 @@ describe('analytics route boundaries', () => {
             headers: {
               Origin: 'https://unirise.tw',
               Cookie: 'unirise_visitor=rate-limited-browser-id',
+              'CF-Connecting-IP': '203.0.113.13',
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({ name: 'page_view', path: '/news' }),
@@ -469,6 +541,74 @@ describe('analytics route boundaries', () => {
     expect(responses[60].status).toBe(429);
     expect(database.events).toHaveLength(60);
   });
+
+  it('rejects unknown paths and download IDs that are not published', async () => {
+    const database = new AnalyticsDatabase();
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
+    const headers = {
+      Origin: 'https://unirise.tw',
+      Cookie: 'unirise_visitor=browser-id',
+      'CF-Connecting-IP': '203.0.113.12',
+      'Content-Type': 'application/json',
+    };
+
+    const invalidPath = await handler(
+      new Request('https://unirise.tw/api/analytics', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: 'page_view', path: '/made-up-page' }),
+      }),
+    );
+    const unpublishedDownload = await handler(
+      new Request('https://unirise.tw/api/analytics', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: 'download_click',
+          path: '/downloads?id=999',
+          metadata: { downloadId: '999' },
+        }),
+      }),
+    );
+
+    expect(invalidPath.status).toBe(400);
+    expect(unpublishedDownload.status).toBe(400);
+    expect(database.events).toEqual([]);
+  });
+
+  it('throttles by a keyed edge identity even when the client rotates cookies', async () => {
+    const database = new AnalyticsDatabase();
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
+    const responses: Response[] = [];
+
+    for (let attempt = 0; attempt < 61; attempt += 1) {
+      responses.push(
+        await handler(
+          new Request('https://unirise.tw/api/analytics', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://unirise.tw',
+              Cookie: `unirise_visitor=rotated-${attempt}`,
+              'CF-Connecting-IP': '203.0.113.12',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: 'page_view', path: '/news' }),
+          }),
+        ),
+      );
+    }
+    expect(responses[60].status).toBe(429);
+    expect(database.events).toHaveLength(60);
+    expect(
+      new Set(database.rateLimits.map((row) => row.visitor_hash)).size,
+    ).toBe(1);
+  });
 });
 
 describe('chat analytics integration', () => {
@@ -479,6 +619,7 @@ describe('chat analytics integration', () => {
       groqApiKey: 'unused-for-gap',
       isAllowed: async () => true,
       retrieveKnowledge: async () => [],
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
     });
 
     const response = await handler(
@@ -513,5 +654,14 @@ describe('question sanitizer', () => {
     expect(sanitized.length).toBeLessThanOrEqual(300);
     expect(sanitized).not.toContain('\u0007');
     expect(sanitized).not.toMatch(/\s{2,}/);
+  });
+});
+
+describe('administrator login', () => {
+  it('does not reveal or prefill the administrator allowlist address', () => {
+    const html = renderToStaticMarkup(createElement(AdminLoginForm));
+
+    expect(html).toContain('id="admin-email"');
+    expect(html).not.toContain('value="hungyu@gmail.com"');
   });
 });

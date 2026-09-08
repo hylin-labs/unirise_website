@@ -13,6 +13,7 @@ type Authenticate = typeof requireAdmin;
 type HandlerOptions = {
   db: D1Database;
   authenticate?: Authenticate;
+  hashPepper?: string;
 };
 
 const VISITOR_COOKIE = 'unirise_visitor';
@@ -64,9 +65,62 @@ function validPublicEvent(value: unknown): {
   };
 }
 
+function canonicalPublicEventPath(event: ReturnType<typeof validPublicEvent>) {
+  if (!event) return null;
+  const url = new URL(event.path, 'https://unirise.invalid');
+  if (url.hash) return null;
+  const allowedKeys: Record<string, string[]> = {
+    '/': [],
+    '/news': ['id'],
+    '/downloads': ['id', 'collection'],
+    '/catalog': ['type', 'id'],
+    '/inquiry': ['product'],
+    '/contact': [],
+  };
+  const keys = allowedKeys[url.pathname];
+  if (
+    !keys ||
+    [...url.searchParams.keys()].some((key) => !keys.includes(key)) ||
+    [...url.searchParams.keys()].some(
+      (key) => url.searchParams.getAll(key).length !== 1,
+    )
+  ) {
+    return null;
+  }
+  const id = url.searchParams.get('id');
+  if (id && !/^\d{1,12}$/.test(id)) return null;
+  const type = url.searchParams.get('type');
+  if (type && type !== 'brand' && type !== 'industry') return null;
+  const collection = url.searchParams.get('collection');
+  const product = url.searchParams.get('product');
+  if (
+    (collection && collection.length > 160) ||
+    (product && product.length > 160)
+  ) {
+    return null;
+  }
+  if (event.name === 'download_click') {
+    if (url.pathname !== '/downloads' || !id) return null;
+    if (event.metadata?.downloadId !== id) return null;
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+async function publishedDownloadExists(db: D1Database, legacyId: string) {
+  return (
+    (await db
+      .prepare(
+        'SELECT id FROM managed_downloads WHERE legacy_id = ? AND status = ? LIMIT 1',
+      )
+      .bind(legacyId, 'published')
+      .first<{ id: string }>()) !== null
+  );
+}
+
 export function createAnalyticsHandler({
   db,
   authenticate = requireAdmin,
+  hashPepper = '',
 }: HandlerOptions) {
   return async function handleAnalytics(request: Request) {
     const url = new URL(request.url);
@@ -106,6 +160,8 @@ export function createAnalyticsHandler({
           { status: 202, headers: { 'Cache-Control': 'no-store' } },
         );
       }
+      const canonicalPath = canonicalPublicEventPath(event);
+      if (!canonicalPath) return jsonError('invalid_event', 400);
       const visitorId = readCookie(
         request.headers.get('cookie'),
         VISITOR_COOKIE,
@@ -116,14 +172,34 @@ export function createAnalyticsHandler({
           { status: 202, headers: { 'Cache-Control': 'no-store' } },
         );
       }
+      const edgeIdentifier = request.headers.get('CF-Connecting-IP');
+      if (!edgeIdentifier) return jsonError('analytics_unavailable', 503);
       try {
-        const visitorHash = await hashVisitorIdentifier(visitorId);
-        if (!(await isPublicEventRequestAllowed(db, visitorHash))) {
+        const downloadId = event.metadata?.downloadId;
+        if (
+          event.name === 'download_click' &&
+          (typeof downloadId !== 'string' ||
+            !(await publishedDownloadExists(db, downloadId)))
+        ) {
+          return jsonError('invalid_event', 400);
+        }
+        const visitorHash = await hashVisitorIdentifier(
+          visitorId,
+          hashPepper,
+          'analytics-visitor',
+        );
+        const throttleHash = await hashVisitorIdentifier(
+          edgeIdentifier,
+          hashPepper,
+          'analytics-throttle',
+        );
+        if (!(await isPublicEventRequestAllowed(db, throttleHash))) {
           return jsonError('rate_limited', 429);
         }
         await recordEvent(db, {
           visitorHash,
           ...event,
+          path: canonicalPath,
         });
       } catch {
         return jsonError('analytics_unavailable', 503);
@@ -159,8 +235,13 @@ export function createAnalyticsHandler({
 }
 
 function handler(request: Request) {
+  const runtime = env as unknown as {
+    DB: D1Database;
+    ANALYTICS_HASH_PEPPER?: string;
+  };
   return createAnalyticsHandler({
-    db: (env as unknown as { DB: D1Database }).DB,
+    db: runtime.DB,
+    hashPepper: runtime.ANALYTICS_HASH_PEPPER,
   })(request);
 }
 

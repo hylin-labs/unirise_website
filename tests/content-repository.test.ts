@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AdminIdentity } from '../lib/admin-auth';
+import { buildAdminContentPayload } from '../lib/admin-content';
 import {
   ContentConflictError,
   ContentValidationError,
@@ -27,6 +28,166 @@ const admin: AdminIdentity = {
 };
 
 describe('managed content repository', () => {
+  it('builds complete create and edit payloads for every admin content form', () => {
+    expect(
+      buildAdminContentPayload({
+        kind: 'news',
+        id: 'news-1',
+        legacyId: '9001',
+        title: 'News title',
+        lead: 'News lead',
+        imageUrl: '/news.jpg',
+        highlightsText: 'First\n\nSecond',
+        videoUrl: 'https://www.youtube.com/embed/demo',
+        href: '',
+        body: '',
+        tagsText: '',
+        status: 'draft',
+      }),
+    ).toEqual({
+      id: 'news-1',
+      legacyId: '9001',
+      title: 'News title',
+      lead: 'News lead',
+      imageUrl: '/news.jpg',
+      highlights: ['First', 'Second'],
+      videoUrl: 'https://www.youtube.com/embed/demo',
+      status: 'draft',
+    });
+    expect(
+      buildAdminContentPayload({
+        kind: 'downloads',
+        id: '',
+        legacyId: '9002',
+        title: 'Brochure',
+        lead: '',
+        imageUrl: '',
+        highlightsText: '',
+        videoUrl: '',
+        href: '',
+        body: '',
+        tagsText: '',
+        status: 'published',
+      }),
+    ).toEqual({ legacyId: '9002', title: 'Brochure', status: 'published' });
+    expect(
+      buildAdminContentPayload({
+        kind: 'knowledge',
+        id: 'knowledge-1',
+        legacyId: '',
+        title: 'Answer',
+        lead: '',
+        imageUrl: '',
+        highlightsText: '',
+        videoUrl: '',
+        href: '/contact',
+        body: 'Source body',
+        tagsText: 'contact, service',
+        status: 'draft',
+      }),
+    ).toEqual({
+      id: 'knowledge-1',
+      title: 'Answer',
+      href: '/contact',
+      body: 'Source body',
+      tags: ['contact', 'service'],
+      status: 'draft',
+    });
+  });
+
+  it('returns every editable field from each authenticated admin content endpoint', async () => {
+    const database = new ContentDatabase();
+    await saveNews(
+      database.d1,
+      {
+        id: 'news-edit',
+        legacyId: '9001',
+        title: 'Editable news',
+        lead: 'Editable lead',
+        imageUrl: '/news.jpg',
+        highlights: ['One', 'Two'],
+        videoUrl: 'https://www.youtube.com/embed/demo',
+        status: 'draft',
+      },
+      admin,
+    );
+    await saveDownload(
+      database.d1,
+      {
+        id: 'download-edit',
+        legacyId: '9002',
+        title: 'Editable brochure',
+        status: 'draft',
+      },
+      admin,
+    );
+    await saveKnowledge(
+      database.d1,
+      {
+        id: 'knowledge-edit',
+        title: 'Editable knowledge',
+        href: '/contact',
+        body: 'Editable answer source',
+        tags: ['contact'],
+        status: 'draft',
+      },
+      admin,
+    );
+
+    const authenticated = async () => admin;
+    const responses = await Promise.all([
+      createNewsAdminHandler(
+        database.d1,
+        authenticated,
+      )(new Request('https://unirise.tw/api/admin/news')),
+      createDownloadsAdminHandler(
+        database.d1,
+        authenticated,
+      )(new Request('https://unirise.tw/api/admin/downloads')),
+      createKnowledgeAdminHandler(
+        database.d1,
+        authenticated,
+      )(new Request('https://unirise.tw/api/admin/knowledge')),
+    ]);
+    const [news, downloads, knowledge] = await Promise.all(
+      responses.map((response) => response.json()),
+    );
+
+    expect(responses.map((response) => response.status)).toEqual([
+      200, 200, 200,
+    ]);
+    expect(news).toEqual({
+      records: [
+        expect.objectContaining({
+          lead: 'Editable lead',
+          imageUrl: '/news.jpg',
+          highlights: ['One', 'Two'],
+          videoUrl: 'https://www.youtube.com/embed/demo',
+          status: 'draft',
+        }),
+      ],
+    });
+    expect(downloads).toEqual({
+      records: [
+        expect.objectContaining({
+          legacyId: '9002',
+          title: 'Editable brochure',
+          status: 'draft',
+        }),
+      ],
+    });
+    expect(knowledge).toEqual({
+      records: [
+        expect.objectContaining({
+          href: '/contact',
+          content: 'Editable answer source',
+          tags: ['contact'],
+          status: 'draft',
+        }),
+      ],
+    });
+  });
+
   it('never returns a draft knowledge record to public retrieval', async () => {
     const database = new ContentDatabase();
     await saveKnowledge(

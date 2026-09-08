@@ -1,4 +1,5 @@
 import { uniriseSchema, visitorStatsSchema } from '../db/schema';
+import { hashVisitorIdentifier } from './analytics';
 
 const LEAD_LIMIT_PER_HOUR = 3;
 const EDGE_LIMIT_PER_MINUTE = 10;
@@ -93,16 +94,6 @@ function normalizeContext(context: LeadContext) {
   };
 }
 
-async function hashVisitorIdentifier(value: string) {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('');
-}
-
 function edgeMinuteBucket(now = new Date()) {
   return `lead:${now.toISOString().slice(0, 16)}`;
 }
@@ -110,8 +101,13 @@ function edgeMinuteBucket(now = new Date()) {
 export async function isLeadSubmissionRequestAllowed(
   db: D1Database,
   visitorIdentifier: string,
+  hashPepper: string,
 ) {
-  const visitorHash = await hashVisitorIdentifier(visitorIdentifier);
+  const visitorHash = await hashVisitorIdentifier(
+    visitorIdentifier,
+    hashPepper,
+    'lead-throttle',
+  );
   const bucket = edgeMinuteBucket();
   const previousHour = edgeMinuteBucket(new Date(Date.now() - 60 * 60 * 1000));
   await db
@@ -161,10 +157,15 @@ export async function createChatLead(
   input: LeadInput,
   context: LeadContext,
   mailer: LeadMailer,
+  hashPepper: string,
 ): Promise<{ id: string; emailDelivered: boolean }> {
   const lead = normalizeLead(input);
   const { sourcePath, visitorIdentifier } = normalizeContext(context);
-  const visitorHash = await hashVisitorIdentifier(visitorIdentifier);
+  const visitorHash = await hashVisitorIdentifier(
+    visitorIdentifier,
+    hashPepper,
+    'lead-visitor',
+  );
   const id = crypto.randomUUID();
   const now = new Date();
   const createdAt = now.toISOString();

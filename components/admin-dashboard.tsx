@@ -1,9 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { AdminIdentity } from '../lib/admin-auth';
+import {
+  buildAdminContentPayload,
+  emptyAdminContentEditor,
+  type AdminContentEditor,
+  type AdminContentKind,
+} from '../lib/admin-content';
 import type { DashboardSnapshot } from '../lib/analytics';
 import styles from './admin-dashboard.module.css';
 
@@ -25,16 +31,20 @@ const metricCards: Array<{
 ];
 
 function dateValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
 function initialRange() {
   const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 29);
+  const from = new Date(to.getTime() - 29 * 24 * 60 * 60 * 1000);
   return { from: dateValue(from), to: dateValue(to) };
 }
 
@@ -57,6 +67,8 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState('');
+  const [editor, setEditor] = useState<AdminContentEditor | null>(null);
+  const [preview, setPreview] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +125,57 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
       await load();
     } catch {
       setError('無法更新發布狀態，請稍後再試。');
+    } finally {
+      setUpdating('');
+    }
+  }
+
+  function editContent(
+    kind: AdminContentKind,
+    record: DashboardSnapshot['content'][AdminContentKind][number],
+    showPreview = false,
+  ) {
+    const next = emptyAdminContentEditor(kind);
+    next.id = record.id;
+    next.title = record.title;
+    next.status = record.status === 'published' ? 'published' : 'draft';
+    if ('legacyId' in record) next.legacyId = record.legacyId;
+    if ('lead' in record) {
+      next.lead = record.lead;
+      next.imageUrl = record.imageUrl;
+      next.highlightsText = record.highlights.join('\n');
+      next.videoUrl = record.videoUrl ?? '';
+    }
+    if ('href' in record) {
+      next.href = record.href;
+      next.body = record.content;
+      next.tagsText = record.tags.join(', ');
+    }
+    setEditor(next);
+    setPreview(showPreview);
+  }
+
+  async function saveContent(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editor) return;
+    setUpdating(`save:${editor.kind}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/admin/${editor.kind}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildAdminContentPayload(editor)),
+      });
+      if (response.status === 409) {
+        setError('內容已由其他工作階段更新。資料已重新載入，請再次編輯。');
+      } else if (!response.ok) {
+        throw new Error('save_failed');
+      }
+      setEditor(null);
+      setPreview(false);
+      await load();
+    } catch {
+      setError('內容未儲存。請確認必填欄位及網址格式後再試。');
     } finally {
       setUpdating('');
     }
@@ -280,8 +343,233 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
               <article className={styles.panel} key={kind}>
                 <div className={styles.panelHeading}>
                   <h2>{label}</h2>
-                  <span>{records.length} 筆</span>
+                  <div className={styles.headingActions}>
+                    <span>{records.length} 筆</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditor(emptyAdminContentEditor(kind));
+                        setPreview(false);
+                      }}
+                    >
+                      ＋ 新增
+                    </button>
+                  </div>
                 </div>
+                {editor?.kind === kind ? (
+                  <form className={styles.contentEditor} onSubmit={saveContent}>
+                    <div className={styles.editorHeading}>
+                      <h3>
+                        {editor.id ? `編輯：${editor.title}` : `新增${label}`}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditor(null);
+                          setPreview(false);
+                        }}
+                      >
+                        關閉
+                      </button>
+                    </div>
+                    <div className={styles.editorFields}>
+                      {(kind === 'news' || kind === 'downloads') && (
+                        <label>
+                          原網址 ID
+                          <input
+                            required
+                            inputMode="numeric"
+                            pattern="[0-9]+"
+                            value={editor.legacyId}
+                            onChange={(event) =>
+                              setEditor({
+                                ...editor,
+                                legacyId: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                      )}
+                      <label>
+                        標題
+                        <input
+                          required
+                          maxLength={160}
+                          value={editor.title}
+                          onChange={(event) =>
+                            setEditor({ ...editor, title: event.target.value })
+                          }
+                        />
+                      </label>
+                      {kind === 'news' ? (
+                        <>
+                          <label className={styles.fullField}>
+                            摘要
+                            <textarea
+                              required
+                              maxLength={8000}
+                              rows={4}
+                              value={editor.lead}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  lead: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            高解析圖片網址
+                            <input
+                              required
+                              value={editor.imageUrl}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  imageUrl: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            影片網址（選填）
+                            <input
+                              value={editor.videoUrl}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  videoUrl: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className={styles.fullField}>
+                            重點（每行一項）
+                            <textarea
+                              rows={5}
+                              value={editor.highlightsText}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  highlightsText: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                      {kind === 'knowledge' ? (
+                        <>
+                          <label>
+                            公開來源網址
+                            <input
+                              required
+                              value={editor.href}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  href: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            標籤（逗號分隔）
+                            <input
+                              value={editor.tagsText}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  tagsText: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className={styles.fullField}>
+                            可供聊天機器人搜尋的內容
+                            <textarea
+                              required
+                              maxLength={8000}
+                              rows={8}
+                              value={editor.body}
+                              onChange={(event) =>
+                                setEditor({
+                                  ...editor,
+                                  body: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                      <label>
+                        儲存狀態
+                        <select
+                          value={editor.status}
+                          onChange={(event) =>
+                            setEditor({
+                              ...editor,
+                              status: event.target.value as
+                                | 'draft'
+                                | 'published',
+                            })
+                          }
+                        >
+                          <option value="draft">草稿</option>
+                          <option value="published">發布</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className={styles.editorActions}>
+                      <button
+                        type="button"
+                        onClick={() => setPreview((value) => !value)}
+                      >
+                        {preview ? '關閉預覽' : '預覽'}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={updating === `save:${kind}`}
+                      >
+                        {updating === `save:${kind}` ? '儲存中…' : '儲存內容'}
+                      </button>
+                    </div>
+                    {preview ? (
+                      <article className={styles.contentPreview}>
+                        <span>
+                          {editor.status === 'published'
+                            ? '發布預覽'
+                            : '草稿預覽'}
+                        </span>
+                        {kind === 'news' && editor.imageUrl ? (
+                          /* oxlint-disable-next-line next/no-img-element -- Admin previews user-selected local or remote URLs without an optimization allowlist. */
+                          <img src={editor.imageUrl} alt="新聞圖片預覽" />
+                        ) : null}
+                        <h3>{editor.title || '尚未輸入標題'}</h3>
+                        <p>
+                          {kind === 'knowledge'
+                            ? editor.body
+                            : kind === 'news'
+                              ? editor.lead
+                              : `下載項目：${editor.title}`}
+                        </p>
+                        {kind === 'news' && editor.highlightsText ? (
+                          <ul>
+                            {editor.highlightsText
+                              .split('\n')
+                              .filter(Boolean)
+                              .map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                          </ul>
+                        ) : null}
+                        {kind === 'knowledge' ? (
+                          <small>來源：{editor.href || '尚未輸入'}</small>
+                        ) : null}
+                      </article>
+                    ) : null}
+                  </form>
+                ) : null}
                 {records.length ? (
                   <div className={styles.contentList}>
                     {records.map((record) => {
@@ -306,23 +594,37 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                           >
                             {published ? '已發布' : '草稿'}
                           </span>
-                          <button
-                            type="button"
-                            disabled={updating === operation}
-                            onClick={() =>
-                              setPublication(
-                                kind,
-                                record.id,
-                                published ? 'draft' : 'published',
-                              )
-                            }
-                          >
-                            {updating === operation
-                              ? '更新中…'
-                              : published
-                                ? '取消發布'
-                                : '發布'}
-                          </button>
+                          <div className={styles.rowActions}>
+                            <button
+                              type="button"
+                              onClick={() => editContent(kind, record)}
+                            >
+                              編輯
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => editContent(kind, record, true)}
+                            >
+                              預覽
+                            </button>
+                            <button
+                              type="button"
+                              disabled={updating === operation}
+                              onClick={() =>
+                                setPublication(
+                                  kind,
+                                  record.id,
+                                  published ? 'draft' : 'published',
+                                )
+                              }
+                            >
+                              {updating === operation
+                                ? '更新中…'
+                                : published
+                                  ? '取消發布'
+                                  : '發布'}
+                            </button>
+                          </div>
                         </div>
                       );
                     })}

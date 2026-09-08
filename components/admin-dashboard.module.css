@@ -69,7 +69,9 @@
   border-radius: 4px;
   background: #c7161e;
   color: #fff;
-  font: 700 15px inherit;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
 }
 .loginForm button:disabled {
@@ -263,6 +265,108 @@
   color: #666;
   font-size: 12px;
 }
+.headingActions,
+.editorActions,
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.headingActions button,
+.editorActions button,
+.rowActions button,
+.editorHeading button {
+  padding: 8px 12px;
+  border: 1px solid #c7161e;
+  border-radius: 4px;
+  background: #fff;
+  color: #c7161e;
+  font: inherit;
+  cursor: pointer;
+}
+.contentEditor {
+  margin: 18px 0 24px;
+  padding: 22px;
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  background: #f8f8f8;
+}
+.editorHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+.editorHeading h3 {
+  margin: 0;
+}
+.editorFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.editorFields label {
+  display: grid;
+  gap: 6px;
+  color: #555;
+  font-size: 13px;
+  font-weight: 700;
+}
+.editorFields input,
+.editorFields textarea,
+.editorFields select {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+}
+.editorFields textarea {
+  resize: vertical;
+  line-height: 1.55;
+}
+.fullField {
+  grid-column: 1 / -1;
+}
+.editorActions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.editorActions button:last-child {
+  background: #c7161e;
+  color: #fff;
+}
+.contentPreview {
+  max-width: 720px;
+  margin-top: 18px;
+  padding: 24px;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+.contentPreview > span {
+  color: #c7161e;
+  font-size: 12px;
+  font-weight: 700;
+}
+.contentPreview img {
+  width: 100%;
+  max-height: 340px;
+  display: block;
+  margin: 14px 0;
+  object-fit: cover;
+}
+.contentPreview h3 {
+  margin: 12px 0;
+  font-size: 24px;
+}
+.contentPreview p,
+.contentPreview li {
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
 .panelIntro {
   margin: -8px 0 24px;
   color: #666;
@@ -319,7 +423,7 @@
 }
 .contentRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(220px, auto);
   align-items: center;
   gap: 18px;
   padding: 15px 0;
@@ -358,6 +462,9 @@
   background: #fff;
   color: #c7161e;
   cursor: pointer;
+}
+.rowActions {
+  justify-content: flex-end;
 }
 .contentRow button:disabled {
   opacity: 0.5;
@@ -474,8 +581,16 @@
   .contentRow {
     grid-template-columns: 1fr auto;
   }
-  .contentRow button {
+  .rowActions {
     grid-column: 1/-1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .editorFields {
+    grid-template-columns: 1fr;
+  }
+  .fullField {
+    grid-column: auto;
   }
   .loginPage {
     padding: 16px;

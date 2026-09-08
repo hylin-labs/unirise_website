@@ -22,6 +22,7 @@ type ChatHandlerOptions = {
   isAllowed?: typeof isChatRequestAllowed;
   fetcher?: typeof fetch;
   retrieveKnowledge?: typeof retrieveSiteKnowledge;
+  analyticsHashPepper?: string;
 };
 
 function validHistory(value: unknown): ChatMessage[] {
@@ -55,6 +56,7 @@ export function createChatHandler({
   isAllowed = isChatRequestAllowed,
   fetcher = fetch,
   retrieveKnowledge = retrieveSiteKnowledge,
+  analyticsHashPepper = '',
 }: ChatHandlerOptions) {
   return async function handleChat(request: Request) {
     const origin = request.headers.get('origin');
@@ -77,39 +79,54 @@ export function createChatHandler({
       request.headers.get('CF-Connecting-IP') ??
       request.headers.get('x-forwarded-for') ??
       'unknown';
-    const visitorHash = await hashVisitorIdentifier(visitorId);
+    let visitorHash: string | null = null;
+    if (analyticsHashPepper) {
+      try {
+        visitorHash = await hashVisitorIdentifier(
+          visitorId,
+          analyticsHashPepper,
+          'chat-visitor',
+        );
+      } catch {
+        // Chat remains available when analytics configuration is unavailable.
+      }
+    }
     let sources: Awaited<ReturnType<typeof retrieveSiteKnowledge>>;
     try {
       if (!(await isAllowed(db, visitorId))) return json('rate_limited', 429);
-      try {
-        await recordEvent(db, {
-          visitorHash,
-          name: 'chat_question',
-          path: '/chat',
-        });
-      } catch {
-        // Analytics must never prevent a visitor from using chat.
+      if (visitorHash) {
+        try {
+          await recordEvent(db, {
+            visitorHash,
+            name: 'chat_question',
+            path: '/chat',
+          });
+        } catch {
+          // Analytics must never prevent a visitor from using chat.
+        }
       }
       sources = await retrieveKnowledge(db, message);
     } catch {
       return json('chat_unavailable', 503);
     }
     if (sources.length === 0) {
-      try {
-        await Promise.all([
-          recordEvent(db, {
-            visitorHash,
-            name: 'chat_unanswered',
-            path: '/chat',
-          }),
-          recordChatOutcome(db, {
-            question: message,
-            outcome: 'unanswered',
-            sourceIds: [],
-          }),
-        ]);
-      } catch {
-        // Analytics must never prevent a visitor from receiving the fallback.
+      if (visitorHash) {
+        try {
+          await Promise.all([
+            recordEvent(db, {
+              visitorHash,
+              name: 'chat_unanswered',
+              path: '/chat',
+            }),
+            recordChatOutcome(db, {
+              question: message,
+              outcome: 'unanswered',
+              sourceIds: [],
+            }),
+          ]);
+        } catch {
+          // Analytics must never prevent a visitor from receiving the fallback.
+        }
       }
       return Response.json(
         {
@@ -158,21 +175,23 @@ export function createChatHandler({
         return json('chat_service_unavailable', 502);
       const cleanedAnswer = visibleAnswer(answer);
       if (!cleanedAnswer) return json('chat_service_unavailable', 502);
-      try {
-        await Promise.all([
-          recordEvent(db, {
-            visitorHash,
-            name: 'chat_answered',
-            path: '/chat',
-          }),
-          recordChatOutcome(db, {
-            question: message,
-            outcome: 'answered',
-            sourceIds: sources.map((source) => source.id),
-          }),
-        ]);
-      } catch {
-        // The successful answer is still returned if analytics is unavailable.
+      if (visitorHash) {
+        try {
+          await Promise.all([
+            recordEvent(db, {
+              visitorHash,
+              name: 'chat_answered',
+              path: '/chat',
+            }),
+            recordChatOutcome(db, {
+              question: message,
+              outcome: 'answered',
+              sourceIds: sources.map((source) => source.id),
+            }),
+          ]);
+        } catch {
+          // The successful answer is still returned if analytics is unavailable.
+        }
       }
       return Response.json(
         {
@@ -191,9 +210,11 @@ export async function POST(request: Request) {
   const runtime = env as unknown as {
     DB: D1Database;
     GROQ_API_KEY?: string;
+    ANALYTICS_HASH_PEPPER?: string;
   };
   return createChatHandler({
     db: runtime.DB,
     groqApiKey: runtime.GROQ_API_KEY,
+    analyticsHashPepper: runtime.ANALYTICS_HASH_PEPPER,
   })(request);
 }

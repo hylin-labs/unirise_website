@@ -50,6 +50,10 @@ export type DashboardSnapshot = {
       id: string;
       legacyId: string;
       title: string;
+      lead: string;
+      imageUrl: string;
+      highlights: string[];
+      videoUrl: string | null;
       status: string;
       updatedAt: string;
     }>;
@@ -64,6 +68,8 @@ export type DashboardSnapshot = {
       id: string;
       title: string;
       href: string;
+      content: string;
+      tags: string[];
       status: string;
       updatedAt: string;
     }>;
@@ -98,29 +104,51 @@ function asNumber(value: number | string | null | undefined) {
 
 function parseDate(value: string) {
   if (!DATE_PATTERN.test(value)) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ||
-    date.toISOString().slice(0, 10) !== value
+  const validationDate = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(validationDate.getTime()) ||
+    validationDate.toISOString().slice(0, 10) !== value
     ? null
-    : date;
+    : value;
 }
 
 export function dashboardBounds(range: DashboardRange) {
   const from = parseDate(range.from);
   const to = parseDate(range.to);
   if (!from || !to || from > to) throw new Error('invalid_date_range');
-  const exclusiveTo = new Date(to);
+  const fromBoundary = new Date(`${from}T00:00:00.000+08:00`);
+  const exclusiveTo = new Date(`${to}T00:00:00.000+08:00`);
   exclusiveTo.setUTCDate(exclusiveTo.getUTCDate() + 1);
-  if (exclusiveTo.getTime() - from.getTime() > 367 * 24 * 60 * 60 * 1000) {
+  if (
+    exclusiveTo.getTime() - fromBoundary.getTime() >
+    367 * 24 * 60 * 60 * 1000
+  ) {
     throw new Error('invalid_date_range');
   }
-  return { from: from.toISOString(), to: exclusiveTo.toISOString() };
+  return { from: fromBoundary.toISOString(), to: exclusiveTo.toISOString() };
 }
 
-export async function hashVisitorIdentifier(value: string) {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
+export async function hashVisitorIdentifier(
+  value: string,
+  pepper: string,
+  context:
+    | 'analytics-visitor'
+    | 'analytics-throttle'
+    | 'chat-visitor'
+    | 'lead-visitor'
+    | 'lead-throttle',
+) {
+  if (pepper.length < 32) throw new Error('analytics_not_configured');
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(pepper),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const digest = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`unirise-analytics-v1:${context}:${value}`),
   );
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0'),
@@ -227,15 +255,38 @@ export function sanitizeQuestion(value: string) {
     return code < 32 || code === 127 ? ' ' : character;
   }).join('');
   return withoutControls
+    .replace(/\b[A-Z][12]\d{8}\b/gi, '[身分資料已隱藏]')
+    .replace(/(?:\d[ -]*?){13,19}/g, '[付款資料已隱藏]')
     .replace(
       /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
       '[電子信箱已隱藏]',
     )
     .replace(/(?:\+?\d[\d\s().-]{5,}\d)/g, '[電話已隱藏]')
+    .replace(
+      /(?:密碼|密码|password|passcode|api[ _-]?key|access[ _-]?token|secret)\s*(?:是|為|:|：|=)?\s*[^，。,.!?！？\s]{1,120}/gi,
+      '[機密資訊已隱藏]',
+    )
+    .replace(
+      /(?:地址|住址)?[\u4e00-\u9fff]{2,10}[市縣][\u4e00-\u9fff0-9\-之弄巷路街段區鄉鎮村里]{2,80}號/gu,
+      '[地址已隱藏]',
+    )
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 300)
     .trim();
+}
+
+function containsHighlySensitiveText(value: string) {
+  return (
+    /(?:密碼|密码|password|passcode|api[ _-]?key|access[ _-]?token|secret)\s*(?:是|為|:|：|=)?\s*\S+/i.test(
+      value,
+    ) ||
+    /\b[A-Z][12]\d{8}\b/i.test(value) ||
+    /(?:\d[ -]*?){13,19}/.test(value) ||
+    /(?:地址|住址)?[\u4e00-\u9fff]{2,10}[市縣][\u4e00-\u9fff0-9\-之弄巷路街段區鄉鎮村里]{2,80}號/u.test(
+      value,
+    )
+  );
 }
 
 function safeSourceIds(sourceIds: string[]) {
@@ -255,6 +306,15 @@ export async function recordChatOutcome(
 ) {
   const now = input.createdAt ?? new Date();
   const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  if (containsHighlySensitiveText(input.question)) {
+    await db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.chatQuestions} WHERE created_at < ?`,
+      )
+      .bind(cutoff.toISOString())
+      .run();
+    return;
+  }
   const question = sanitizeQuestion(input.question);
   if (!question) return;
   await db.batch([
@@ -328,6 +388,18 @@ function parseSourceIds(value: string) {
   }
 }
 
+function parseTextList(value: unknown) {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function optionalString(value: unknown) {
   return typeof value === 'string' ? value : null;
 }
@@ -390,7 +462,7 @@ export async function getDashboardSnapshot(
       .all<Record<string, unknown>>(),
     db
       .prepare(
-        `SELECT id, legacy_id, title, status, updated_at
+        `SELECT id, legacy_id, title, lead, image_url, highlights_json, video_url, status, updated_at
            FROM ${uniriseSchema.managedNews} ORDER BY updated_at DESC`,
       )
       .all<Record<string, unknown>>(),
@@ -402,7 +474,7 @@ export async function getDashboardSnapshot(
       .all<Record<string, unknown>>(),
     db
       .prepare(
-        `SELECT id, title, href, status, updated_at
+        `SELECT id, title, href, body, tags_json, status, updated_at
            FROM ${uniriseSchema.chatKnowledge} ORDER BY updated_at DESC`,
       )
       .all<Record<string, unknown>>(),
@@ -443,6 +515,10 @@ export async function getDashboardSnapshot(
         id: String(row.id),
         legacyId: String(row.legacy_id),
         title: String(row.title),
+        lead: String(row.lead),
+        imageUrl: String(row.image_url),
+        highlights: parseTextList(row.highlights_json),
+        videoUrl: optionalString(row.video_url),
         status: String(row.status),
         updatedAt: String(row.updated_at),
       })),
@@ -457,6 +533,8 @@ export async function getDashboardSnapshot(
         id: String(row.id),
         title: String(row.title),
         href: String(row.href),
+        content: String(row.body),
+        tags: parseTextList(row.tags_json),
         status: String(row.status),
         updatedAt: String(row.updated_at),
       })),

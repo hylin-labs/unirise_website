@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createLeadsHandler } from '../app/api/leads/route';
-import { createChatLead, type LeadNotification } from '../lib/lead-service';
+import {
+  createChatLead,
+  isLeadSubmissionRequestAllowed,
+  type LeadNotification,
+} from '../lib/lead-service';
 import { sendLeadNotification } from '../lib/resend';
 
 vi.mock('cloudflare:workers', () => ({ env: {} }));
+
+const TEST_ANALYTICS_PEPPER = 'analytics-test-pepper-at-least-32-characters';
 
 type Row = Record<string, unknown>;
 
@@ -150,6 +156,34 @@ function captureMailer(deliveries: LeadNotification[]) {
 }
 
 describe('chat lead service', () => {
+  it('uses keyed, domain-separated hashes for lead records and edge throttles', async () => {
+    const database = new LeadDatabase();
+
+    await isLeadSubmissionRequestAllowed(
+      database.d1,
+      '203.0.113.4',
+      TEST_ANALYTICS_PEPPER,
+    );
+    await createChatLead(
+      database.d1,
+      {
+        requestType: 'quote',
+        name: 'Lin',
+        email: 'buyer@example.com',
+        message: 'Please provide a quote.',
+      },
+      { sourcePath: '/', visitorIdentifier: '203.0.113.4' },
+      async () => undefined,
+      TEST_ANALYTICS_PEPPER,
+    );
+
+    expect(database.leads[0].visitor_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(database.rateLimits[0].visitor_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(database.leads[0].visitor_hash).not.toBe(
+      database.rateLimits[0].visitor_hash,
+    );
+  });
+
   it('stores a valid quote lead, records its event, and requests the owner notification', async () => {
     const database = new LeadDatabase();
     const deliveries: LeadNotification[] = [];
@@ -166,6 +200,7 @@ describe('chat lead service', () => {
       },
       { sourcePath: '/catalog?id=2', visitorIdentifier: '203.0.113.4' },
       captureMailer(deliveries),
+      TEST_ANALYTICS_PEPPER,
     );
 
     expect(result.emailDelivered).toBe(true);
@@ -216,6 +251,7 @@ describe('chat lead service', () => {
         },
         { sourcePath: '/', visitorIdentifier: 'visitor-a' },
         captureMailer(deliveries),
+        TEST_ANALYTICS_PEPPER,
       ),
     ).rejects.toThrow('invalid_lead');
     expect(database.leads).toEqual([]);
@@ -241,6 +277,7 @@ describe('chat lead service', () => {
         },
         { sourcePath: '/', visitorIdentifier: 'visitor-domain' },
         async () => undefined,
+        TEST_ANALYTICS_PEPPER,
       ),
     ).rejects.toThrow('invalid_lead');
     expect(database.leads).toEqual([]);
@@ -261,6 +298,7 @@ describe('chat lead service', () => {
         },
         { sourcePath: '/', visitorIdentifier: 'visitor-atomic' },
         captureMailer(deliveries),
+        TEST_ANALYTICS_PEPPER,
       ),
     ).rejects.toThrow('event write failed');
     expect(database.leads).toEqual([]);
@@ -283,6 +321,7 @@ describe('chat lead service', () => {
       async () => {
         throw new Error('mail unavailable');
       },
+      TEST_ANALYTICS_PEPPER,
     );
 
     expect(result.emailDelivered).toBe(false);
@@ -307,6 +346,7 @@ describe('chat lead service', () => {
       },
       { sourcePath: '/', visitorIdentifier: 'visitor-tracking' },
       async () => undefined,
+      TEST_ANALYTICS_PEPPER,
     );
 
     expect(result.emailDelivered).toBe(true);
@@ -342,6 +382,23 @@ describe('chat lead route protection', () => {
     });
   }
 
+  it('fails closed when the server-only analytics hash secret is missing', async () => {
+    const database = new LeadDatabase();
+    const handler = createLeadsHandler({
+      db: database.d1,
+      mailer: async () => undefined,
+    });
+
+    const response = await handler(leadRequest('https://unirise.tw'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: 'lead_unavailable',
+    });
+    expect(database.rateLimits).toEqual([]);
+    expect(database.leads).toEqual([]);
+  });
+
   it.each([undefined, 'https://attacker.example'])(
     'rejects a submission without the exact site origin (%s)',
     async (origin) => {
@@ -349,6 +406,7 @@ describe('chat lead route protection', () => {
       const handler = createLeadsHandler({
         db: database.d1,
         mailer: async () => undefined,
+        analyticsHashPepper: TEST_ANALYTICS_PEPPER,
       });
 
       const response = await handler(leadRequest(origin));
@@ -366,6 +424,7 @@ describe('chat lead route protection', () => {
     const handler = createLeadsHandler({
       db: database.d1,
       mailer: async () => undefined,
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
     });
 
     const response = await handler(leadRequest('https://unirise.tw', '{'));
@@ -384,6 +443,7 @@ describe('chat lead route protection', () => {
     const handler = createLeadsHandler({
       db: database.d1,
       mailer: async () => undefined,
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
     });
 
     const response = await handler(
@@ -403,6 +463,7 @@ describe('chat lead route protection', () => {
     const handler = createLeadsHandler({
       db: database.d1,
       mailer: async () => undefined,
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
     });
 
     const responses = [];
@@ -424,6 +485,7 @@ describe('chat lead route protection', () => {
     const handler = createLeadsHandler({
       db: database.d1,
       mailer: async () => undefined,
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
     });
 
     const responses = [];
@@ -447,6 +509,7 @@ describe('chat lead route protection', () => {
       mailer: async () => {
         throw new Error('mail unavailable');
       },
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
     });
 
     const response = await handler(leadRequest('https://unirise.tw'));

@@ -11,6 +11,7 @@ type LeadsHandlerOptions = {
   db: D1Database;
   mailer: LeadMailer;
   isRequestAllowed?: typeof isLeadSubmissionRequestAllowed;
+  analyticsHashPepper?: string;
 };
 
 const MAX_BODY_BYTES = 12_000;
@@ -52,6 +53,7 @@ export function createLeadsHandler({
   db,
   mailer,
   isRequestAllowed = isLeadSubmissionRequestAllowed,
+  analyticsHashPepper = '',
 }: LeadsHandlerOptions) {
   return async function handleLeads(request: Request) {
     const origin = request.headers.get('origin');
@@ -64,7 +66,7 @@ export function createLeadsHandler({
     const visitorIdentifier =
       forwardedIdentifier?.trim().slice(0, 500) || 'unknown';
     try {
-      if (!(await isRequestAllowed(db, visitorIdentifier)))
+      if (!(await isRequestAllowed(db, visitorIdentifier, analyticsHashPepper)))
         return errorResponse('rate_limited', 429);
     } catch {
       return errorResponse('lead_unavailable', 503);
@@ -91,6 +93,7 @@ export function createLeadsHandler({
           visitorIdentifier,
         },
         mailer,
+        analyticsHashPepper,
       );
       return Response.json(
         { accepted: true, followUpDelayed: !result.emailDelivered },
@@ -111,6 +114,7 @@ export async function POST(request: Request) {
     DB: D1Database;
     RESEND_API_KEY?: string;
     RESEND_FROM_EMAIL?: string;
+    ANALYTICS_HASH_PEPPER?: string;
   };
   return createLeadsHandler({
     db: runtime.DB,
@@ -119,5 +123,6 @@ export async function POST(request: Request) {
         apiKey: runtime.RESEND_API_KEY,
         fromEmail: runtime.RESEND_FROM_EMAIL,
       }),
+    analyticsHashPepper: runtime.ANALYTICS_HASH_PEPPER,
   })(request);
 }

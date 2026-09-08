@@ -13,6 +13,7 @@ export type ManagedNews = {
   videoUrl: string | null;
   status: ContentStatus;
   publishedAt: string | null;
+  updatedAt?: string;
 };
 
 export type ManagedDownload = {
@@ -21,6 +22,7 @@ export type ManagedDownload = {
   title: string;
   status: ContentStatus;
   publishedAt: string | null;
+  updatedAt?: string;
 };
 
 export type KnowledgeSource = {
@@ -29,6 +31,12 @@ export type KnowledgeSource = {
   href: string;
   content: string;
   tags: string[];
+};
+
+export type ManagedKnowledge = KnowledgeSource & {
+  status: ContentStatus;
+  publishedAt: string | null;
+  updatedAt: string;
 };
 
 export type KnowledgeInput = {
@@ -68,6 +76,7 @@ type NewsRow = {
   video_url: string | null;
   status: ContentStatus;
   published_at: string | null;
+  updated_at?: string;
 };
 
 type DownloadRow = {
@@ -76,6 +85,7 @@ type DownloadRow = {
   title: string;
   status: ContentStatus;
   published_at: string | null;
+  updated_at?: string;
 };
 
 type KnowledgeRow = {
@@ -86,6 +96,7 @@ type KnowledgeRow = {
   tags_json: string;
   status: ContentStatus;
   published_at: string | null;
+  updated_at?: string;
 };
 
 export class ContentValidationError extends Error {
@@ -176,6 +187,7 @@ function newsFromRow(row: NewsRow): ManagedNews {
     videoUrl: row.video_url,
     status: row.status,
     publishedAt: row.published_at,
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
   };
 }
 
@@ -186,6 +198,7 @@ function downloadFromRow(row: DownloadRow): ManagedDownload {
     title: row.title,
     status: row.status,
     publishedAt: row.published_at,
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
   };
 }
 
@@ -196,6 +209,15 @@ function knowledgeFromRow(row: KnowledgeRow): KnowledgeSource {
     href: row.href,
     content: row.body,
     tags: parseStringList(row.tags_json),
+  };
+}
+
+function managedKnowledgeFromRow(row: KnowledgeRow): ManagedKnowledge {
+  return {
+    ...knowledgeFromRow(row),
+    status: row.status,
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at ?? '',
   };
 }
 
@@ -339,6 +361,17 @@ export async function listPublishedNews(db: D1Database) {
   return rows.results.map(newsFromRow);
 }
 
+export async function listAllNews(db: D1Database) {
+  const rows = await db
+    .prepare(
+      `SELECT id, legacy_id, title, lead, image_url, highlights_json, video_url, status, published_at, updated_at
+       FROM ${uniriseSchema.managedNews}
+       ORDER BY updated_at DESC`,
+    )
+    .all<NewsRow>();
+  return rows.results.map(newsFromRow);
+}
+
 export async function findPublishedNewsByLegacyId(
   db: D1Database,
   legacyId: string,
@@ -366,6 +399,28 @@ export async function listPublishedDownloads(db: D1Database) {
     .bind('published')
     .all<DownloadRow>();
   return rows.results.map(downloadFromRow);
+}
+
+export async function listAllDownloads(db: D1Database) {
+  const rows = await db
+    .prepare(
+      `SELECT id, legacy_id, title, status, published_at, updated_at
+       FROM ${uniriseSchema.managedDownloads}
+       ORDER BY updated_at DESC`,
+    )
+    .all<DownloadRow>();
+  return rows.results.map(downloadFromRow);
+}
+
+export async function listAllKnowledge(db: D1Database) {
+  const rows = await db
+    .prepare(
+      `SELECT id, title, href, body, tags_json, status, published_at, updated_at
+       FROM ${uniriseSchema.chatKnowledge}
+       ORDER BY updated_at DESC`,
+    )
+    .all<KnowledgeRow>();
+  return rows.results.map(managedKnowledgeFromRow);
 }
 
 function queryTerms(value: string) {

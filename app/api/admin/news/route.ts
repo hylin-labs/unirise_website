@@ -3,6 +3,7 @@ import { requireAdmin } from '../../../../lib/admin-auth';
 import {
   ContentConflictError,
   ContentValidationError,
+  listAllNews,
   saveNews,
   setNewsPublication,
   type ContentStatus,
@@ -28,6 +29,18 @@ export function createNewsAdminHandler(
     const origin = request.headers.get('origin');
     if (origin && origin !== new URL(request.url).origin) {
       return json('origin_not_allowed', 403);
+    }
+
+    if (request.method === 'GET') {
+      try {
+        return Response.json(
+          { records: await listAllNews(db) },
+          { headers: { 'Cache-Control': 'no-store' } },
+        );
+      } catch (error) {
+        console.error('News listing failed', error);
+        return json('content_unavailable', 503);
+      }
     }
 
     let payload: unknown;
@@ -81,3 +94,4 @@ function handler(request: Request) {
 
 export const POST = handler;
 export const PATCH = handler;
+export const GET = handler;
