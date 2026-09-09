@@ -3,10 +3,16 @@ import {
   scheduleAnalyticsRetention,
   type RetentionExecutionContext,
 } from './lib/analytics-retention';
+import { ensureInitialContent } from './lib/runtime-initialization';
 
 const worker = {
-  fetch(...args: Parameters<typeof handler.fetch>) {
-    return handler.fetch(...args);
+  async fetch(
+    request: Request,
+    runtime: { DB: D1Database },
+    context: ExecutionContext,
+  ) {
+    await ensureInitialContent(runtime.DB);
+    return handler.fetch(request, runtime, context);
   },
   scheduled(
     _controller: unknown,

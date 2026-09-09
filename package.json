@@ -10,7 +10,8 @@
     "build": "vinext build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "wrangler dev --config dist/server/wrangler.json --env-file .dev.vars",
+    "start": "node scripts/start-worker.mjs",
+    "test:local-worker-smoke": "node scripts/smoke-local-worker.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },

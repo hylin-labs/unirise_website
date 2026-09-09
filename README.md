@@ -16,9 +16,9 @@
    2. `npx wrangler d1 execute site-creator-d1 --local --config dist/server/wrangler.json --file drizzle/0001_add_chat_rate_limits.sql`
    3. `npx wrangler d1 execute site-creator-d1 --local --config dist/server/wrangler.json --file drizzle/0002_add_admin_content_leads_analytics.sql`
 
-   The final migration creates the initial enabled administrator allowlist entry for `hungyu@gmail.com`.
+   Migration `0002` is schema-only. On the first Worker request, the idempotent runtime initializer creates the `hungyu@gmail.com` allowlist entry and imports the legacy public content. A new Worker isolate can run that safe initializer again; `INSERT OR IGNORE` keeps the resulting data stable.
 
-5. Start the local Worker against that generated configuration with `npm run start`. Its script explicitly loads the root `.dev.vars` with Wrangler's `--env-file .dev.vars` option, even though its Worker config is under `dist/server/wrangler.json`. Run `npm run dev` only for the Vite development server.
+5. Start the local Worker with `npm run start`. The cross-platform Node wrapper resolves the repository-root `.dev.vars` path before it calls Wrangler, so it is not affected by the generated `dist/server/wrangler.json` location. Run `npm run dev` only for the Vite development server.
 
 ## Required checks for this feature
 
@@ -29,6 +29,7 @@ The following checks are green for the admin, lead, and analytics feature:
 3. `npm exec oxfmt -- --check tests/admin-leads-analytics.e2e.test.ts`
 4. `npm run build`
 5. `git diff --check`
+6. `npm run test:local-worker-smoke` (only when no root `.dev.vars` already exists; it creates and removes a sentinel-only file and isolated local D1 state)
 
 Then manually check the administrator login, publish a knowledge entry, ask the chatbot a matching question and verify its source link, submit a quote lead, simulate email failure, filter the analytics dashboard by date, open `/news?id=3944`, and confirm the visitor counter works.
 
@@ -39,23 +40,15 @@ Then manually check the administrator login, publish a knowledge entry, ask the 
 Production release is blocked until all of the following are complete:
 
 1. Verify the `RESEND_FROM_EMAIL` sender/domain in Resend.
-2. In the Sites project identified by `.openai/hosting.json`, confirm that the production D1 binding is named `DB` and that its configured database name is `site-creator-d1`. The generated `dist/server/wrangler.json` uses that same database name for local development; its all-zero database ID is not a production target.
-3. Choose the procedure that matches the production database state. Do not use the fresh-database procedure on an existing database.
+2. Build the site and inspect the Sites deployment package. The supported migration bundle is `dist/.openai/drizzle/0000_add_visitor_statistics.sql`, `dist/.openai/drizzle/0001_add_chat_rate_limits.sql`, and `dist/.openai/drizzle/0002_add_admin_content_leads_analytics.sql`. `.openai/hosting.json` declares the logical D1 binding as `DB`; Sites owns the bound production database and migration history.
+3. Use the existing Sites deploy pipeline to preview and apply that packaged migration bundle. Do not run arbitrary remote `wrangler d1 execute` commands against a production database.
 
-   - **Fresh production database only:** After confirming it contains no Unirise application tables or application data, apply each migration once and in order:
+   - **Fresh production database:** confirm the Sites migration preview contains the three files in ascending order, then let the Sites deployment apply them once. The first Worker request performs the safe runtime content initialization.
+   - **Existing production database:** review the Sites migration status and generated migration plan before release. Apply only the package migrations the Sites pipeline marks as pending. If the recorded migration state or schema is ambiguous, stop and reconcile it through the deployment owner; never rerun a migration merely because object names appear to exist.
 
-     1. `npx wrangler d1 execute site-creator-d1 --remote --file drizzle/0000_add_visitor_statistics.sql`
-     2. `npx wrangler d1 execute site-creator-d1 --remote --file drizzle/0001_add_chat_rate_limits.sql`
-     3. `npx wrangler d1 execute site-creator-d1 --remote --file drizzle/0002_add_admin_content_leads_analytics.sql`
-
-   - **Existing production database:** First inspect the schema and deployment record. This repository does not contain a D1 migration-history table, so confirm the state from the database before running anything:
-
-     `npx wrangler d1 execute site-creator-d1 --remote --command "SELECT type, name FROM sqlite_master WHERE type IN ('table', 'index') AND name IN ('site_visitors', 'site_visitor_days', 'site_visitor_totals', 'site_chat_rate_limits', 'admin_users', 'admin_login_codes', 'admin_sessions', 'admin_audit_log', 'managed_news', 'managed_downloads', 'chat_knowledge', 'chat_leads', 'site_events', 'chat_question_log', 'admin_sessions_active_idx', 'managed_news_published_idx', 'managed_downloads_published_idx', 'chat_knowledge_published_idx', 'chat_leads_status_date_idx', 'site_events_date_path_idx', 'chat_question_log_outcome_date_idx') ORDER BY type, name;"`
-
-     Treat `site_visitors`, `site_visitor_days`, and `site_visitor_totals` as the 0000 schema; `site_chat_rate_limits` as 0001; and the remaining listed tables plus their indexes as 0002. Run only a migration whose full schema is absent, exactly once, and keep the order 0000, then 0001, then 0002. If a migration is partially present, its state is ambiguous: stop, back up the database, reconcile the schema with the migration owner, and do not rerun that SQL file. The 0000 and 0001 files contain non-idempotent `CREATE TABLE` statements, so blindly reapplying them to an existing database can fail.
-
-4. Configure `GROQ_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_AUTH_PEPPER`, and `ANALYTICS_HASH_PEPPER` as Sites production secrets for that project. Do not expose them as client variables or commit them to the repository.
-5. Complete the feature checks above against the release build. Resolve the separate full-repository lint baseline before declaring a fully clean production release.
-6. Sign in through `/admin/login` as the initial allowlisted administrator, `hungyu@gmail.com`, and verify only the intended published content is public.
+4. For local-only troubleshooting, use schema SQL and `PRAGMA` output rather than object-name checks as evidence. For example, compare `PRAGMA table_info('admin_users')` and `PRAGMA index_list('admin_sessions')` against `drizzle/0002_add_admin_content_leads_analytics.sql`; table or index names alone do not establish compatible columns, constraints, or migration state.
+5. Configure `GROQ_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_AUTH_PEPPER`, and `ANALYTICS_HASH_PEPPER` as Sites production secrets for that project. Do not expose them as client variables or commit them to the repository.
+6. Complete the feature checks above against the release build. Resolve the separate full-repository lint baseline before declaring a fully clean production release.
+7. Sign in through `/admin/login` as the initial allowlisted administrator, `hungyu@gmail.com`, and verify only the intended published content is public.
 
 After those prerequisites are confirmed, publish the validated build using the existing Sites release process and perform a non-sensitive production smoke test. Do not publish, configure production secrets, or run remote D1 commands from a local `.dev.vars` file.

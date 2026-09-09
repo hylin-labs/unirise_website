@@ -496,4 +496,34 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
     expect(delivered).toEqual([]);
     expect(database.codes).toEqual([]);
   });
+
+  it('keeps a quote lead when the simulated Resend delivery fails', async () => {
+    const database = new ReleaseDatabase();
+    const leads = createLeadsHandler({
+      db: database.d1,
+      mailer: async () => {
+        throw new Error('simulated Resend outage');
+      },
+      isRequestAllowed: async () => true,
+      analyticsHashPepper: ANALYTICS_HASH_PEPPER,
+    });
+
+    const response = await leads(
+      jsonRequest('https://unirise.example/api/leads', {
+        requestType: 'quote',
+        name: 'Lin',
+        email: 'buyer@example.com',
+        message: '請提供報價。',
+        sourcePath: '/',
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      accepted: true,
+      followUpDelayed: true,
+    });
+    expect(database.leads).toHaveLength(1);
+    expect(database.leads[0].email_delivered).toBe(0);
+  });
 });
