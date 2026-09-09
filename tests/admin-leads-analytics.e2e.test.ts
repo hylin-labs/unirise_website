@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { POST as verifyAdminCode } from '../app/api/admin/auth/verify-code/route';
+import { createRequestCodeHandler } from '../app/api/admin/auth/request-code/route';
+import { createKnowledgeAdminHandler } from '../app/api/admin/knowledge/route';
+import { createAnalyticsHandler } from '../app/api/analytics/route';
 import { createChatHandler } from '../app/api/chat/route';
-import { getDashboardMetrics, recordEvent } from '../lib/analytics';
-import { requestAdminCode, verifyAdminCode } from '../lib/admin-auth';
-import { createChatLead } from '../lib/lead-service';
+import { createLeadsHandler } from '../app/api/leads/route';
+import { env } from 'cloudflare:workers';
 
 vi.mock('cloudflare:workers', () => ({ env: {} }));
 
@@ -76,34 +79,29 @@ class ReleaseDatabase {
   ];
   readonly codes: Row[] = [];
   readonly sessions: Row[] = [];
-  readonly knowledge: Row[] = [
-    {
-      id: 'release-source',
-      title: 'XAVIS X-ray 檢測方案',
-      href: '/catalog?type=brand&id=2',
-      body: 'X-ray 檢測設備可用於食品異物檢查。',
-      tags_json: '["xray","食品"]',
-      status: 'published',
-      published_at: '2026-09-02T00:00:00.000Z',
-    },
-  ];
+  readonly knowledge: Row[] = [];
   readonly leads: Row[] = [];
   readonly events: Row[] = [];
   readonly questions: Row[] = [];
+  readonly rateLimits: Row[] = [];
 
   readonly d1 = {
     prepare: (sql: string) =>
       new ReleaseStatement(sql, this) as unknown as D1PreparedStatement,
     batch: async (statements: D1PreparedStatement[]) => {
-      const leadSnapshot = this.leads.map((row) => ({ ...row }));
-      const eventSnapshot = this.events.map((row) => ({ ...row }));
+      const snapshots = [
+        [this.knowledge, this.knowledge.map((row) => ({ ...row }))],
+        [this.leads, this.leads.map((row) => ({ ...row }))],
+        [this.events, this.events.map((row) => ({ ...row }))],
+      ] as const;
       try {
-        return await Promise.all(
-          statements.map((statement) => statement.run()),
-        );
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        return results;
       } catch (error) {
-        this.leads.splice(0, this.leads.length, ...leadSnapshot);
-        this.events.splice(0, this.events.length, ...eventSnapshot);
+        for (const [table, snapshot] of snapshots) {
+          table.splice(0, table.length, ...snapshot);
+        }
         throw error;
       }
     },
@@ -130,17 +128,54 @@ class ReleaseDatabase {
         ? [{ ...code, admin_id: user.id, email: user.email, role: user.role }]
         : [];
     }
-    if (query.includes('from chat_knowledge')) {
+    if (query.includes('from admin_sessions s join admin_users u')) {
+      const session = this.sessions.find(
+        (row) =>
+          row.token_hash === values[0] &&
+          row.revoked_at == null &&
+          String(row.expires_at) > String(values[1]),
+      );
+      const user =
+        session && this.users.find((row) => row.id === session.admin_user_id);
+      return user && user.enabled === 1
+        ? [{ id: user.id, email: user.email, role: user.role }]
+        : [];
+    }
+    if (query.startsWith('insert into site_chat_rate_limits')) {
+      const [bucket, visitorHash] = values.map(String);
+      const existing = this.rateLimits.find(
+        (row) => row.bucket === bucket && row.visitor_hash === visitorHash,
+      );
+      if (existing) {
+        existing.request_count = Number(existing.request_count) + 1;
+        return [{ request_count: existing.request_count }];
+      }
+      this.rateLimits.push({
+        bucket,
+        visitor_hash: visitorHash,
+        request_count: 1,
+      });
+      return [{ request_count: 1 }];
+    }
+    if (
+      query.includes('from chat_knowledge') &&
+      query.includes('where id = ?')
+    ) {
+      return this.knowledge.filter((row) => row.id === values[0]);
+    }
+    if (query.includes('from chat_knowledge') && query.includes('status = ?')) {
       return this.knowledge.filter((row) => row.status === values[0]);
     }
+    if (query.includes('from chat_knowledge')) return this.knowledge;
     if (
       query.includes('from site_events') &&
       query.includes('unique_visitors')
     ) {
-      const [from, to] = values.map(String);
-      const rows = this.events.filter(
-        (row) =>
-          String(row.occurred_at) >= from && String(row.occurred_at) < to,
+      const rows = this.rowsInRange(
+        this.events,
+        String(values[0]),
+        String(values[1]),
+        'occurred_at',
       );
       const count = (name: string) =>
         rows.filter((row) => row.name === name).length;
@@ -159,6 +194,42 @@ class ReleaseDatabase {
           leads: count('inquiry_submitted'),
         },
       ];
+    }
+    if (query.includes('from site_events') && query.includes('group by path')) {
+      const rows = this.rowsInRange(
+        this.events,
+        String(values[0]),
+        String(values[1]),
+        'occurred_at',
+      ).filter((row) => row.name === values[2]);
+      const grouped = new Map<string, number>();
+      for (const row of rows) {
+        const path = String(row.path);
+        grouped.set(path, (grouped.get(path) ?? 0) + 1);
+      }
+      return [...grouped].map(([path, count]) => ({ path, count }));
+    }
+    if (query.includes('from chat_question_log')) {
+      return this.rowsInRange(
+        this.questions,
+        String(values[0]),
+        String(values[1]),
+        'created_at',
+      ).filter((row) => row.outcome === 'unanswered');
+    }
+    if (query.includes('from chat_leads')) {
+      return this.rowsInRange(
+        this.leads,
+        String(values[0]),
+        String(values[1]),
+        'created_at',
+      );
+    }
+    if (
+      query.includes('from managed_news') ||
+      query.includes('from managed_downloads')
+    ) {
+      return [];
     }
     throw new Error(`Unsupported release-test read SQL: ${sql}`);
   }
@@ -192,6 +263,21 @@ class ReleaseDatabase {
       this.sessions.push(insertRow(sql, values));
       return 1;
     }
+    if (query.startsWith('insert into chat_knowledge')) {
+      const row = insertRow(sql, values);
+      if (this.knowledge.some((item) => item.id === row.id)) return 0;
+      this.knowledge.push(row);
+      return 1;
+    }
+    if (query.startsWith('update chat_knowledge set status')) {
+      const record = this.knowledge.find((row) => row.id === values[3]);
+      if (!record) return 0;
+      record.status = values[0];
+      record.published_at = values[1];
+      record.updated_at = values[2];
+      return 1;
+    }
+    if (query.startsWith('insert into admin_audit_log')) return 1;
     if (query.startsWith('insert into chat_leads')) {
       this.leads.push(insertRow(sql, values));
       return 1;
@@ -211,8 +297,29 @@ class ReleaseDatabase {
       lead.updated_at = values[1];
       return 1;
     }
+    if (query.startsWith('delete from site_chat_rate_limits')) return 0;
+    if (query.startsWith('delete from chat_question_log')) return 0;
     throw new Error(`Unsupported release-test write SQL: ${sql}`);
   }
+
+  private rowsInRange(rows: Row[], from: string, to: string, field: string) {
+    return rows.filter(
+      (row) => String(row[field]) >= from && String(row[field]) < to,
+    );
+  }
+}
+
+function jsonRequest(url: string, body: unknown, cookie?: string) {
+  return new Request(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: new URL(url).origin,
+      'CF-Connecting-IP': '203.0.113.8',
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 describe('admin, chatbot, lead, and analytics release flow', () => {
@@ -223,38 +330,86 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it('authenticates the allowlisted admin, answers from published knowledge, saves a quote lead, and reports conversion', async () => {
+  it('uses the API handlers for an admin session, publication, chat source, quote lead, and conversion metric', async () => {
     const database = new ReleaseDatabase();
+    Object.assign(env as object, {
+      DB: database.d1,
+      ADMIN_AUTH_PEPPER,
+    });
+    const background: Promise<unknown>[] = [];
     let loginCode = '';
-
-    await requestAdminCode(
-      database.d1,
-      'hungyu@gmail.com',
-      'admin-browser',
-      async ({ code }) => {
+    const requestCode = createRequestCodeHandler({
+      db: database.d1,
+      codePepper: ADMIN_AUTH_PEPPER,
+      mailer: async ({ code }) => {
         loginCode = code;
       },
-      ADMIN_AUTH_PEPPER,
+      waitUntil: (promise) => background.push(promise),
+    });
+    const requestCodeResponse = await requestCode(
+      jsonRequest('https://unirise.example/api/admin/auth/request-code', {
+        email: 'hungyu@gmail.com',
+      }),
     );
-    const admin = await verifyAdminCode(
-      database.d1,
-      'hungyu@gmail.com',
-      loginCode,
-      new Date(),
-      ADMIN_AUTH_PEPPER,
-    );
-    expect(admin).toMatchObject({ email: 'hungyu@gmail.com', role: 'admin' });
+    expect(requestCodeResponse.status).toBe(202);
+    await Promise.all(background);
 
-    await recordEvent(database.d1, {
-      visitorHash: 'visitor-a',
-      name: 'page_view',
-      path: '/',
+    const verifyResponse = await verifyAdminCode(
+      jsonRequest('https://unirise.example/api/admin/auth/verify-code', {
+        email: 'hungyu@gmail.com',
+        code: loginCode,
+      }),
+    );
+    expect(verifyResponse.status).toBe(200);
+    const sessionCookie = verifyResponse.headers
+      .get('Set-Cookie')
+      ?.split(';')[0];
+    expect(sessionCookie).toMatch(/^unirise_admin_session=/);
+
+    const knowledge = createKnowledgeAdminHandler(database.d1);
+    const createKnowledge = await knowledge(
+      jsonRequest(
+        'https://unirise.example/api/admin/knowledge',
+        {
+          id: 'release-source',
+          title: 'XAVIS X-ray 檢測方案',
+          href: '/catalog?type=brand&id=2',
+          body: 'X-ray 檢測設備可用於食品異物檢查。',
+          tags: ['xray', '食品'],
+          status: 'draft',
+        },
+        sessionCookie,
+      ),
+    );
+    expect(createKnowledge.status).toBe(201);
+    const publishKnowledge = await knowledge(
+      new Request('https://unirise.example/api/admin/knowledge', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://unirise.example',
+          Cookie: sessionCookie ?? '',
+        },
+        body: JSON.stringify({ id: 'release-source', status: 'published' }),
+      }),
+    );
+    expect(publishKnowledge.status).toBe(200);
+
+    const analytics = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: ANALYTICS_HASH_PEPPER,
     });
-    await recordEvent(database.d1, {
-      visitorHash: 'visitor-b',
-      name: 'page_view',
-      path: '/catalog',
-    });
+    for (const visitor of ['visitor-a', 'visitor-b']) {
+      const pageView = await analytics(
+        jsonRequest(
+          'https://unirise.example/api/analytics',
+          { name: 'page_view', path: '/' },
+          `unirise_visitor=${visitor}`,
+        ),
+      );
+      expect(pageView.status).toBe(202);
+    }
+
     const chat = createChatHandler({
       db: database.d1,
       groqApiKey: 'test-groq-key',
@@ -269,13 +424,8 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
         ),
     });
     const chatResponse = await chat(
-      new Request('https://unirise.example/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'CF-Connecting-IP': '203.0.113.8',
-        },
-        body: JSON.stringify({ message: '請問 X-ray 檢測方案？' }),
+      jsonRequest('https://unirise.example/api/chat', {
+        message: '請問 X-ray 檢測方案？',
       }),
     );
     expect(chatResponse.status).toBe(200);
@@ -288,55 +438,61 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
       ],
     });
 
-    await expect(
-      createChatLead(
-        database.d1,
-        {
-          requestType: 'quote',
-          name: 'Lin',
-          email: 'buyer@example.com',
-          message: '請提供 X-ray 檢測設備報價。',
-        },
-        {
-          sourcePath: '/catalog?type=brand&id=2',
-          visitorIdentifier: '203.0.113.8',
-        },
-        async (notification) => {
-          expect(notification.to).toBe('hungyu@gmail.com');
-        },
-        ANALYTICS_HASH_PEPPER,
-      ),
-    ).resolves.toMatchObject({ emailDelivered: true });
-
-    await expect(
-      getDashboardMetrics(database.d1, {
-        from: '2026-09-02',
-        to: '2026-09-02',
+    const leads = createLeadsHandler({
+      db: database.d1,
+      mailer: async () => undefined,
+      isRequestAllowed: async () => true,
+      analyticsHashPepper: ANALYTICS_HASH_PEPPER,
+    });
+    const leadResponse = await leads(
+      jsonRequest('https://unirise.example/api/leads', {
+        requestType: 'quote',
+        name: 'Lin',
+        email: 'buyer@example.com',
+        message: '請提供 X-ray 檢測設備報價。',
+        sourcePath: '/catalog?type=brand&id=2',
       }),
-    ).resolves.toMatchObject({
-      uniqueVisitors: 2,
-      leads: 1,
-      leadConversionRate: 0.5,
+    );
+    expect(leadResponse.status).toBe(201);
+    await expect(leadResponse.json()).resolves.toEqual({
+      accepted: true,
+      followUpDelayed: false,
+    });
+
+    const dashboard = await analytics(
+      new Request(
+        'https://unirise.example/api/analytics?from=2026-09-02&to=2026-09-02',
+        { headers: { Cookie: sessionCookie ?? '' } },
+      ),
+    );
+    expect(dashboard.status).toBe(200);
+    await expect(dashboard.json()).resolves.toMatchObject({
+      metrics: { uniqueVisitors: 2, leads: 1, leadConversionRate: 0.5 },
     });
     expect(database.leads).toHaveLength(1);
-    expect(database.questions).toHaveLength(1);
   });
 
-  it('does not issue an administrator code for an address outside the allowlist', async () => {
+  it('returns neutral acceptance without issuing a login code outside the allowlist', async () => {
     const database = new ReleaseDatabase();
+    const background: Promise<unknown>[] = [];
     const delivered: string[] = [];
+    const requestCode = createRequestCodeHandler({
+      db: database.d1,
+      codePepper: ADMIN_AUTH_PEPPER,
+      mailer: async ({ code }) => {
+        delivered.push(code);
+      },
+      waitUntil: (promise) => background.push(promise),
+    });
 
-    await expect(
-      requestAdminCode(
-        database.d1,
-        'outside@example.com',
-        'unknown-browser',
-        async ({ code }) => {
-          delivered.push(code);
-        },
-        ADMIN_AUTH_PEPPER,
-      ),
-    ).resolves.toEqual({ accepted: true });
+    const response = await requestCode(
+      jsonRequest('https://unirise.example/api/admin/auth/request-code', {
+        email: 'outside@example.com',
+      }),
+    );
+    await Promise.all(background);
+
+    expect(response.status).toBe(202);
     expect(delivered).toEqual([]);
     expect(database.codes).toEqual([]);
   });
