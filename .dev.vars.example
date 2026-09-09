@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars and set each value locally. Do not commit .dev.vars.
+GROQ_API_KEY=
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+ADMIN_AUTH_PEPPER=
+ANALYTICS_HASH_PEPPER=
