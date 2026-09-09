@@ -34,7 +34,35 @@ async function terminateWindowsTree(child) {
     windowsHide: true,
   });
   const completed = await waitForExit(taskkill, 5_000);
-  if (!completed) taskkill.kill('SIGKILL');
+  if (!completed) {
+    taskkill.kill('SIGKILL');
+    throw new Error('taskkill timed out');
+  }
+  if (taskkill.exitCode !== 0 || taskkill.signalCode !== null) {
+    throw new Error(
+      `taskkill exited ${taskkill.exitCode ?? taskkill.signalCode ?? 'unknown'}`,
+    );
+  }
+}
+
+function terminateWindowsTreeSync(child) {
+  const result = spawnSync(
+    'taskkill',
+    ['/pid', String(child.pid), '/T', '/F'],
+    {
+      stdio: 'ignore',
+      timeout: 5_000,
+      windowsHide: true,
+    },
+  );
+  if (result.status !== 0 || result.error || result.signal) {
+    throw (
+      result.error ??
+      new Error(
+        `taskkill exited ${result.status ?? result.signal ?? 'unknown'}`,
+      )
+    );
+  }
 }
 
 export async function terminateChildTree(
@@ -51,8 +79,13 @@ export async function terminateChildTree(
   if (platform === 'win32') {
     try {
       await terminateWindows(child);
-    } catch {
-      child.kill('SIGKILL');
+    } catch (error) {
+      throw new Error(
+        'Windows taskkill failed; tree termination is unconfirmed.',
+        {
+          cause: error,
+        },
+      );
     }
     if (await waitForExit(child, forceMs)) return;
     child.kill('SIGKILL');
@@ -77,21 +110,33 @@ export async function terminateChildTree(
   }
 }
 
-export function terminateChildTreeSync(child) {
+export function terminateChildTreeSync(
+  child,
+  {
+    platform = process.platform,
+    terminateWindowsTreeSync: terminateWindows = terminateWindowsTreeSync,
+  } = {},
+) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-      timeout: 5_000,
-      windowsHide: true,
-    });
-    return;
+  if (platform === 'win32') {
+    try {
+      terminateWindows(child);
+    } catch (error) {
+      throw new Error(
+        'Windows taskkill failed; tree termination is unconfirmed.',
+        {
+          cause: error,
+        },
+      );
+    }
+    return true;
   }
   try {
     process.kill(-child.pid, 'SIGKILL');
   } catch {
     child.kill('SIGKILL');
   }
+  return true;
 }
 
 export function runCommand(

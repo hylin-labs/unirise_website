@@ -161,8 +161,26 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 process.once('exit', () => {
-  for (const child of activeChildren) terminateChildTreeSync(child);
-  terminateChildTreeSync(worker);
+  const terminationFailures = [];
+  for (const child of activeChildren) {
+    try {
+      terminateChildTreeSync(child);
+    } catch (error) {
+      terminationFailures.push(error);
+    }
+  }
+  try {
+    terminateChildTreeSync(worker);
+  } catch (error) {
+    terminationFailures.push(error);
+  }
+  if (terminationFailures.length > 0) {
+    console.error(
+      'Smoke cleanup tree termination failed:',
+      ...terminationFailures,
+    );
+    process.exitCode = 1;
+  }
   try {
     if (createdEnvFile) removeOwnedTemporaryFileSync(envFile, smokeEnvContents);
   } catch {}

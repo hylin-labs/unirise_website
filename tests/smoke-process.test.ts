@@ -11,6 +11,7 @@ import {
   removeTemporaryArtifact,
   runCommand,
   terminateChildTree,
+  terminateChildTreeSync,
 } from '../scripts/smoke-process.mjs';
 
 describe('local Worker smoke process helpers', () => {
@@ -143,5 +144,48 @@ describe('local Worker smoke process helpers', () => {
         terminateWindowsTree: async () => undefined,
       }),
     ).rejects.toThrow('did not exit after Windows termination');
+  });
+
+  it('treats a failed Windows taskkill as unsafe even if the parent exits', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      pid: 42,
+      exitCode: null as number | null,
+      signalCode: null,
+      kill: (_signal?: string) => {
+        child.exitCode = 1;
+        child.emit('exit', 1);
+        return true;
+      },
+    });
+
+    await expect(
+      terminateChildTree(child, {
+        platform: 'win32',
+        terminateWindowsTree: async () => {
+          child.kill('SIGKILL');
+          throw new Error('taskkill exited 1');
+        },
+      }),
+    ).rejects.toThrow('Windows taskkill failed');
+  });
+
+  it('rejects a failed synchronous Windows taskkill even if the parent exits', () => {
+    const child = Object.assign(new EventEmitter(), {
+      pid: 42,
+      exitCode: null as number | null,
+      signalCode: null,
+      kill: () => true,
+    });
+
+    expect(() =>
+      terminateChildTreeSync(child, {
+        platform: 'win32',
+        terminateWindowsTreeSync: () => {
+          child.exitCode = 1;
+          child.emit('exit', 1);
+          throw new Error('taskkill exited 1');
+        },
+      }),
+    ).toThrow('Windows taskkill failed; tree termination is unconfirmed');
   });
 });
