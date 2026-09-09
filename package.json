@@ -10,7 +10,7 @@
     "build": "vinext build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "wrangler dev --config dist/server/wrangler.json",
+    "start": "wrangler dev --config dist/server/wrangler.json --env-file .dev.vars",
     "lint": "oxlint",
     "format": "oxfmt"
   },

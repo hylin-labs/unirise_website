@@ -18,7 +18,7 @@
 
    The final migration creates the initial enabled administrator allowlist entry for `hungyu@gmail.com`.
 
-5. Start the local Worker against that generated configuration with `npm run start`, or run `npm run dev` for the Vite development server.
+5. Start the local Worker against that generated configuration with `npm run start`. Its script explicitly loads the root `.dev.vars` with Wrangler's `--env-file .dev.vars` option, even though its Worker config is under `dist/server/wrangler.json`. Run `npm run dev` only for the Vite development server.
 
 ## Required checks for this feature
 
@@ -39,12 +39,20 @@ Then manually check the administrator login, publish a knowledge entry, ask the 
 Production release is blocked until all of the following are complete:
 
 1. Verify the `RESEND_FROM_EMAIL` sender/domain in Resend.
-2. In the Sites project identified by `.openai/hosting.json`, confirm that its Cloudflare D1 binding is named `DB`. Select that bound production D1 database, then apply the same migrations in this exact order: `drizzle/0000_add_visitor_statistics.sql`, `drizzle/0001_add_chat_rate_limits.sql`, and `drizzle/0002_add_admin_content_leads_analytics.sql`.
-3. If migration is performed from the Cloudflare CLI rather than the D1 SQL console, replace `<production-d1-name-or-id>` with the D1 database bound as `DB` in Sites and run:
+2. In the Sites project identified by `.openai/hosting.json`, confirm that the production D1 binding is named `DB` and that its configured database name is `site-creator-d1`. The generated `dist/server/wrangler.json` uses that same database name for local development; its all-zero database ID is not a production target.
+3. Choose the procedure that matches the production database state. Do not use the fresh-database procedure on an existing database.
 
-   1. `npx wrangler d1 execute <production-d1-name-or-id> --remote --file drizzle/0000_add_visitor_statistics.sql`
-   2. `npx wrangler d1 execute <production-d1-name-or-id> --remote --file drizzle/0001_add_chat_rate_limits.sql`
-   3. `npx wrangler d1 execute <production-d1-name-or-id> --remote --file drizzle/0002_add_admin_content_leads_analytics.sql`
+   - **Fresh production database only:** After confirming it contains no Unirise application tables or application data, apply each migration once and in order:
+
+     1. `npx wrangler d1 execute site-creator-d1 --remote --file drizzle/0000_add_visitor_statistics.sql`
+     2. `npx wrangler d1 execute site-creator-d1 --remote --file drizzle/0001_add_chat_rate_limits.sql`
+     3. `npx wrangler d1 execute site-creator-d1 --remote --file drizzle/0002_add_admin_content_leads_analytics.sql`
+
+   - **Existing production database:** First inspect the schema and deployment record. This repository does not contain a D1 migration-history table, so confirm the state from the database before running anything:
+
+     `npx wrangler d1 execute site-creator-d1 --remote --command "SELECT type, name FROM sqlite_master WHERE type IN ('table', 'index') AND name IN ('site_visitors', 'site_visitor_days', 'site_visitor_totals', 'site_chat_rate_limits', 'admin_users', 'admin_login_codes', 'admin_sessions', 'admin_audit_log', 'managed_news', 'managed_downloads', 'chat_knowledge', 'chat_leads', 'site_events', 'chat_question_log', 'admin_sessions_active_idx', 'managed_news_published_idx', 'managed_downloads_published_idx', 'chat_knowledge_published_idx', 'chat_leads_status_date_idx', 'site_events_date_path_idx', 'chat_question_log_outcome_date_idx') ORDER BY type, name;"`
+
+     Treat `site_visitors`, `site_visitor_days`, and `site_visitor_totals` as the 0000 schema; `site_chat_rate_limits` as 0001; and the remaining listed tables plus their indexes as 0002. Run only a migration whose full schema is absent, exactly once, and keep the order 0000, then 0001, then 0002. If a migration is partially present, its state is ambiguous: stop, back up the database, reconcile the schema with the migration owner, and do not rerun that SQL file. The 0000 and 0001 files contain non-idempotent `CREATE TABLE` statements, so blindly reapplying them to an existing database can fail.
 
 4. Configure `GROQ_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_AUTH_PEPPER`, and `ANALYTICS_HASH_PEPPER` as Sites production secrets for that project. Do not expose them as client variables or commit them to the repository.
 5. Complete the feature checks above against the release build. Resolve the separate full-repository lint baseline before declaring a fully clean production release.
