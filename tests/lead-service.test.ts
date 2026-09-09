@@ -198,7 +198,10 @@ describe('chat lead service', () => {
         message: 'Need an X-ray inspection quote.',
         topic: 'X-ray inspection',
       },
-      { sourcePath: '/catalog?id=2', visitorIdentifier: '203.0.113.4' },
+      {
+        sourcePath: '/catalog?type=brand&id=2&note=private-buyer%40example.com',
+        visitorIdentifier: '203.0.113.4',
+      },
       captureMailer(deliveries),
       TEST_ANALYTICS_PEPPER,
     );
@@ -212,7 +215,7 @@ describe('chat lead service', () => {
       email: 'buyer@example.com',
       company: 'Example Foods',
       message: 'Need an X-ray inspection quote.',
-      source_path: '/catalog?id=2',
+      source_path: '/catalog',
       status: 'new',
       email_delivered: 1,
     });
@@ -221,8 +224,10 @@ describe('chat lead service', () => {
     expect(database.events).toHaveLength(1);
     expect(database.events[0]).toMatchObject({
       name: 'inquiry_submitted',
-      path: '/catalog?id=2',
+      path: '/catalog',
     });
+    expect(JSON.stringify(database.leads)).not.toContain('private-buyer');
+    expect(JSON.stringify(database.events)).not.toContain('private-buyer');
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0]).toMatchObject({
       to: 'hungyu@gmail.com',

@@ -314,38 +314,23 @@ export async function recordChatOutcome(
   },
 ) {
   const now = input.createdAt ?? new Date();
-  const cutoff = new Date(now.getTime() - CHAT_QUESTION_RETENTION_MS);
-  if (containsHighlySensitiveText(input.question)) {
-    await db
-      .prepare(
-        `DELETE FROM ${uniriseSchema.chatQuestions} WHERE created_at < ?`,
-      )
-      .bind(cutoff.toISOString())
-      .run();
-    return;
-  }
+  if (containsHighlySensitiveText(input.question)) return;
   const question = sanitizeQuestion(input.question);
   if (!question) return;
-  await db.batch([
-    db
-      .prepare(
-        `DELETE FROM ${uniriseSchema.chatQuestions} WHERE created_at < ?`,
-      )
-      .bind(cutoff.toISOString()),
-    db
-      .prepare(
-        `INSERT INTO ${uniriseSchema.chatQuestions}
+  await db
+    .prepare(
+      `INSERT INTO ${uniriseSchema.chatQuestions}
           (id, question, outcome, source_ids_json, created_at)
          VALUES (?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        crypto.randomUUID(),
-        question,
-        input.outcome,
-        JSON.stringify(safeSourceIds(input.sourceIds)),
-        now.toISOString(),
-      ),
-  ]);
+    )
+    .bind(
+      crypto.randomUUID(),
+      question,
+      input.outcome,
+      JSON.stringify(safeSourceIds(input.sourceIds)),
+      now.toISOString(),
+    )
+    .run();
 }
 
 export async function pruneExpiredChatQuestions(

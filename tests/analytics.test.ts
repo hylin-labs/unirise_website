@@ -276,7 +276,7 @@ describe('analytics metrics', () => {
     });
   });
 
-  it('sanitizes stored questions, retains source IDs, and deletes rows older than 90 days', async () => {
+  it('sanitizes stored questions without running retention deletion on a public chat write', async () => {
     const database = new AnalyticsDatabase();
     database.questions.push({
       id: 'old',
@@ -292,12 +292,35 @@ describe('analytics metrics', () => {
       sourceIds: ['catalog-xavis-xray', 'catalog-xavis-xray', 'bad id!'],
     });
 
-    expect(database.questions).toHaveLength(1);
+    expect(database.questions).toHaveLength(2);
     expect(database.questions[0]).toMatchObject({
+      id: 'old',
+      question: 'old question',
+    });
+    expect(database.questions[1]).toMatchObject({
       question: '請寄給 [電子信箱已隱藏]，電話 [電話已隱藏]。',
       outcome: 'answered',
       source_ids_json: '["catalog-xavis-xray"]',
     });
+  });
+
+  it('does not run retention deletion when a public chat question is refused', async () => {
+    const database = new AnalyticsDatabase();
+    database.questions.push({
+      id: 'old',
+      question: 'old question',
+      outcome: 'unanswered',
+      source_ids_json: '[]',
+      created_at: '2026-05-01T00:00:00.000Z',
+    });
+
+    await recordChatOutcome(database.d1, {
+      question: 'Please deliver to 123 Main Street',
+      outcome: 'unanswered',
+      sourceIds: [],
+    });
+
+    expect(database.questions.map((row) => row.id)).toEqual(['old']);
   });
 
   it('redacts contact details again when displaying a legacy unanswered question', async () => {
@@ -439,6 +462,13 @@ describe('analytics metrics', () => {
 });
 
 describe('analytics route boundaries', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
+  });
+
+  afterEach(() => vi.useRealTimers());
+
   it('does not prune expired chat questions for an unauthenticated read', async () => {
     const database = new AnalyticsDatabase();
     database.questions.push({
@@ -686,6 +716,42 @@ describe('analytics route boundaries', () => {
       expect(response.status).toBe(400);
     }
 
+    expect(database.events).toEqual([]);
+  });
+
+  it('rate-limits forged unpublished download events before checking publication', async () => {
+    const database = new AnalyticsDatabase();
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
+    const responses: Response[] = [];
+
+    for (let attempt = 0; attempt < 61; attempt += 1) {
+      responses.push(
+        await handler(
+          new Request('https://unirise.tw/api/analytics', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://unirise.tw',
+              Cookie: `unirise_visitor=forged-download-${attempt}`,
+              'CF-Connecting-IP': '203.0.113.77',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: 'download_click',
+              path: '/downloads?id=999',
+              metadata: { downloadId: '999' },
+            }),
+          }),
+        ),
+      );
+    }
+
+    expect(responses.slice(0, 60).every(({ status }) => status === 400)).toBe(
+      true,
+    );
+    expect(responses[60].status).toBe(429);
     expect(database.events).toEqual([]);
   });
 

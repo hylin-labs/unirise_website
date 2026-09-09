@@ -172,6 +172,14 @@ export function createAnalyticsHandler({
       const edgeIdentifier = request.headers.get('CF-Connecting-IP');
       if (!edgeIdentifier) return jsonError('analytics_unavailable', 503);
       try {
+        const throttleHash = await hashVisitorIdentifier(
+          edgeIdentifier,
+          hashPepper,
+          'analytics-throttle',
+        );
+        if (!(await isPublicEventRequestAllowed(db, throttleHash))) {
+          return jsonError('rate_limited', 429);
+        }
         const downloadId = event.metadata?.downloadId;
         if (
           event.name === 'download_click' &&
@@ -185,14 +193,6 @@ export function createAnalyticsHandler({
           hashPepper,
           'analytics-visitor',
         );
-        const throttleHash = await hashVisitorIdentifier(
-          edgeIdentifier,
-          hashPepper,
-          'analytics-throttle',
-        );
-        if (!(await isPublicEventRequestAllowed(db, throttleHash))) {
-          return jsonError('rate_limited', 429);
-        }
         await recordEvent(db, {
           visitorHash,
           ...event,

@@ -2,6 +2,7 @@
 
 import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
 import { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import { publicAnalyticsPath } from '../lib/public-analytics-path';
 import styles from './support-chat.module.css';
 
 type ChatSource = { title: string; href: string };
@@ -134,7 +135,7 @@ export function SupportChat() {
           phone: formData.get('phone'),
           topic: formData.get('topic'),
           message: formData.get('message'),
-          sourcePath: `${window.location.pathname}${window.location.search}`,
+          sourcePath: publicAnalyticsPath(window.location.pathname, '') ?? '/',
         }),
       });
       const payload = (await response.json()) as {

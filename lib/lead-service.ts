@@ -1,5 +1,6 @@
 import { uniriseSchema, visitorStatsSchema } from '../db/schema';
 import { hashVisitorIdentifier } from './analytics';
+import { publicAnalyticsPath } from './public-analytics-path';
 
 const LEAD_LIMIT_PER_HOUR = 3;
 const EDGE_LIMIT_PER_MINUTE = 10;
@@ -85,9 +86,11 @@ function normalizeLead(input: LeadInput): NormalizedLead {
 }
 
 function normalizeContext(context: LeadContext) {
-  const sourcePath = requiredText(context.sourcePath, 500);
-  if (!sourcePath.startsWith('/') || sourcePath.startsWith('//'))
+  const submittedPath = requiredText(context.sourcePath, 500);
+  if (!submittedPath.startsWith('/') || submittedPath.startsWith('//'))
     throw new Error('invalid_lead');
+  const url = new URL(submittedPath, 'https://unirise.invalid');
+  const sourcePath = publicAnalyticsPath(url.pathname, '') ?? '/';
   return {
     sourcePath,
     visitorIdentifier: requiredText(context.visitorIdentifier, 500),
