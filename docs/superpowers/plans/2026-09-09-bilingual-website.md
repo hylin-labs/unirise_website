@@ -37,7 +37,7 @@
 
 ## Tasks
 
-### 1. Establish the locale contract and exact path conversion rules
+### Task 1: Establish the locale contract and exact path conversion rules
 
 **Files:**
 - Create: `lib/locales.ts`
@@ -56,7 +56,7 @@
 
 - [ ] **Step 5: Run focused tests.** Run `npm test -- locale-routing.test.ts` and verify no current route is reinterpreted as an external URL.
 
-### 2. Persist canonical public content, English translations, and resumable translation jobs
+### Task 2: Persist canonical public content, English translations, and resumable translation jobs
 
 **Files:**
 - Create: `drizzle/0003_add_bilingual_content.sql`
@@ -82,7 +82,7 @@
 
 - [ ] **Step 7: Run focused tests.** Run `npm test -- translation-repository.test.ts content-repository.test.ts`.
 
-### 3. Make the existing content repository locale-aware without regressing Chinese behavior
+### Task 3: Make the existing content repository locale-aware without regressing Chinese behavior
 
 **Files:**
 - Modify: `lib/content-repository.ts`
@@ -100,7 +100,7 @@
 
 - [ ] **Step 5: Run content/retrieval tests.** Run `npm test -- content-repository.test.ts chat-retrieval.test.ts`.
 
-### 4. Add the Groq translation service with literal protection and durable batch execution
+### Task 4: Add the Groq translation service with literal protection and durable batch execution
 
 **Files:**
 - Create: `lib/groq-translation.ts`
@@ -119,7 +119,7 @@
 
 - [ ] **Step 5: Run focused tests.** Run `npm test -- translation-service.test.ts translation-repository.test.ts`.
 
-### 5. Expose protected translation management in the existing administrator dashboard
+### Task 5: Expose protected translation management in the existing administrator dashboard
 
 **Files:**
 - Create: `app/api/admin/translations/route.ts`
@@ -140,7 +140,7 @@
 
 - [ ] **Step 5: Run focused tests.** Run `npm test -- translation-admin.test.ts admin-auth.test.ts content-repository.test.ts`.
 
-### 6. Refactor shared public chrome and home content into one locale-aware implementation
+### Task 6: Refactor shared public chrome and home content into one locale-aware implementation
 
 **Files:**
 - Modify: `app/page.tsx`
@@ -163,7 +163,7 @@
 
 - [ ] **Step 6: Run focused tests.** Run `npm test -- public-home-locale.test.tsx locale-routing.test.ts`.
 
-### 7. Implement every English inner route using shared localized page modules
+### Task 7: Implement every English inner route using shared localized page modules
 
 **Files:**
 - Create: `components/public-inner-page.tsx`
@@ -191,7 +191,7 @@
 
 - [ ] **Step 6: Run route coverage tests.** Run `npm test -- public-route-coverage.test.tsx public-home-locale.test.tsx`.
 
-### 8. Make chat, leads, and analytics locale-specific while preserving privacy guarantees
+### Task 8: Make chat, leads, and analytics locale-specific while preserving privacy guarantees
 
 **Files:**
 - Modify: `app/api/chat/route.ts`
@@ -216,7 +216,7 @@
 
 - [ ] **Step 5: Run focused privacy and behavior tests.** Run `npm test -- bilingual-chat-analytics.test.ts chat-retrieval.test.ts analytics.test.ts lead-service.test.ts`.
 
-### 9. Emit localized SEO metadata and sitemap coverage
+### Task 9: Emit localized SEO metadata and sitemap coverage
 
 **Files:**
 - Create: `lib/locale-seo.ts`
@@ -241,7 +241,7 @@
 
 - [ ] **Step 5: Run focused tests.** Run `npm test -- localized-seo.test.ts public-route-coverage.test.ts`.
 
-### 10. Add release-grade bilingual smoke coverage and documentation
+### Task 10: Add release-grade bilingual smoke coverage and documentation
 
 **Files:**
 - Create: `scripts/smoke-bilingual-local-worker.mjs`
