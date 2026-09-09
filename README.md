@@ -25,15 +25,14 @@
 The following checks are green for the admin, lead, and analytics feature:
 
 1. `npm test`
-2. `npm exec oxlint -- tests/admin-leads-analytics.e2e.test.ts`
-3. `npm exec oxfmt -- --check tests/admin-leads-analytics.e2e.test.ts`
-4. `npm run build`
-5. `git diff --check`
-6. `npm run test:local-worker-smoke` (only when no root `.dev.vars` already exists; it creates and removes a sentinel-only file and isolated local D1 state)
+2. `npm run lint`
+3. `npm exec oxlint -- tests/admin-leads-analytics.e2e.test.ts`
+4. `npm exec oxfmt -- --check tests/admin-leads-analytics.e2e.test.ts`
+5. `npm run build`
+6. `git diff --check`
+7. `npm run test:local-worker-smoke` (only when no root `.dev.vars` already exists; it creates and removes a sentinel-only file and isolated local D1 state)
 
 Then manually check the administrator login, publish a knowledge entry, ask the chatbot a matching question and verify its source link, submit a quote lead, simulate email failure, filter the analytics dashboard by date, open `/news?id=3944`, and confirm the visitor counter works.
-
-`npm run lint` is not currently a green repository-wide release gate. It reports pre-existing accessibility, React-compiler, and legacy-page findings outside this feature. Treat that baseline as known technical debt and a separate full-release blocker; do not claim a clean full-repository lint result until those findings are resolved.
 
 ## Production release prerequisites
 
@@ -48,7 +47,7 @@ Production release is blocked until all of the following are complete:
 
 4. For local-only troubleshooting, use schema SQL and `PRAGMA` output rather than object-name checks as evidence. For example, compare `PRAGMA table_info('admin_users')` and `PRAGMA index_list('admin_sessions')` against `drizzle/0002_add_admin_content_leads_analytics.sql`; table or index names alone do not establish compatible columns, constraints, or migration state.
 5. Configure `GROQ_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_AUTH_PEPPER`, and `ANALYTICS_HASH_PEPPER` as Sites production secrets for that project. Do not expose them as client variables or commit them to the repository.
-6. Complete the feature checks above against the release build. Resolve the separate full-repository lint baseline before declaring a fully clean production release.
+6. Complete every feature check above, including `npm run lint`, against the release build before declaring the production release ready.
 7. Sign in through `/admin/login` as the initial allowlisted administrator, `hungyu@gmail.com`, and verify only the intended published content is public.
 
 After those prerequisites are confirmed, publish the validated build using the existing Sites release process and perform a non-sensitive production smoke test. Do not publish, configure production secrets, or run remote D1 commands from a local `.dev.vars` file.
