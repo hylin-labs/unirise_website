@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { usePathname } from 'next/navigation';
 import { LOCALE_COOKIE_NAME, LOCALE_LABELS, type Locale } from '../lib/locales';
 import { localeFromPathname, localizedPath } from '../lib/localized-route';
@@ -33,18 +33,20 @@ export function LanguageSwitcher() {
     <nav aria-label="Language">
       {(['zh-TW', 'en'] as const).map((locale) => {
         const href = localizedPath(locale, pathname, location.search, location.hash);
+        const prepareNavigation = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+          writeLocaleCookie(locale);
+          const currentLocation = browserLocation();
+          const correctedHref = localizedPath(locale, pathname, currentLocation.search, currentLocation.hash);
+          event.currentTarget.setAttribute('href', correctedHref);
+        };
 
         return (
           <a
             aria-current={currentLocale === locale ? 'page' : undefined}
             href={href}
             key={locale}
-            onClick={(event) => {
-              writeLocaleCookie(locale);
-              const currentLocation = browserLocation();
-              const correctedHref = localizedPath(locale, pathname, currentLocation.search, currentLocation.hash);
-              event.currentTarget.setAttribute('href', correctedHref);
-            }}
+            onAuxClick={prepareNavigation}
+            onClick={prepareNavigation}
           >
             {LOCALE_LABELS[locale]}
           </a>

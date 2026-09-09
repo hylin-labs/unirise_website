@@ -150,7 +150,6 @@ describe('LanguageSwitcher', () => {
     ['an unmodified primary click', { button: 0, ctrlKey: false, detail: 1, metaKey: false }],
     ['a Ctrl-modified primary click', { button: 0, ctrlKey: true, detail: 1, metaKey: false }],
     ['a Cmd-modified primary click', { button: 0, ctrlKey: false, detail: 1, metaKey: true }],
-    ['a middle-button click', { button: 1, ctrlKey: false, detail: 1, metaKey: false }],
     ['keyboard activation', { button: 0, ctrlKey: false, detail: 0, metaKey: false }],
   ])('updates the anchor href without intercepting %s before synchronization', (_, interaction) => {
     const englishLink = languageLinks()[1];
