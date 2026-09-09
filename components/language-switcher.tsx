@@ -43,11 +43,7 @@ export function LanguageSwitcher() {
               writeLocaleCookie(locale);
               const currentLocation = browserLocation();
               const correctedHref = localizedPath(locale, pathname, currentLocation.search, currentLocation.hash);
-
-              if (correctedHref !== href) {
-                event.preventDefault();
-                window.location.assign(correctedHref);
-              }
+              event.currentTarget.setAttribute('href', correctedHref);
             }}
           >
             {LOCALE_LABELS[locale]}

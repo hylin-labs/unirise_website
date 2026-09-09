@@ -55,8 +55,17 @@ import { LanguageSwitcher } from '../components/language-switcher';
 type LanguageLink = {
   props: {
     href: string;
-    onClick: (event: { preventDefault: () => void }) => void;
+    onClick: (event: NativeClickEvent) => void;
   };
+};
+
+type NativeClickEvent = {
+  button: number;
+  ctrlKey: boolean;
+  currentTarget: { setAttribute: (name: string, value: string) => void };
+  detail: number;
+  metaKey: boolean;
+  preventDefault: () => void;
 };
 
 function renderLanguageSwitcher() {
@@ -137,13 +146,21 @@ describe('LanguageSwitcher', () => {
     expect(languageHrefs()).toEqual(['/catalog?flag#brands', '/en/catalog?flag#brands']);
   });
 
-  it('corrects an unsynchronized anchor destination at click time', () => {
+  it.each([
+    ['an unmodified primary click', { button: 0, ctrlKey: false, detail: 1, metaKey: false }],
+    ['a Ctrl-modified primary click', { button: 0, ctrlKey: true, detail: 1, metaKey: false }],
+    ['a Cmd-modified primary click', { button: 0, ctrlKey: false, detail: 1, metaKey: true }],
+    ['a middle-button click', { button: 1, ctrlKey: false, detail: 1, metaKey: false }],
+    ['keyboard activation', { button: 0, ctrlKey: false, detail: 0, metaKey: false }],
+  ])('updates the anchor href without intercepting %s before synchronization', (_, interaction) => {
     const englishLink = languageLinks()[1];
     const preventDefault = vi.fn();
+    const setAttribute = vi.fn();
 
-    englishLink.props.onClick({ preventDefault });
+    englishLink.props.onClick({ currentTarget: { setAttribute }, preventDefault, ...interaction });
 
-    expect(preventDefault).toHaveBeenCalledOnce();
-    expect(browser.assign).toHaveBeenCalledWith('/en/catalog?flag#news');
+    expect(setAttribute).toHaveBeenCalledWith('href', '/en/catalog?flag#news');
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(browser.assign).not.toHaveBeenCalled();
   });
 });
