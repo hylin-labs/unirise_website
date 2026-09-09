@@ -8,7 +8,8 @@ export async function POST(request: Request) {
   const visitorId = existingVisitorId ?? crypto.randomUUID();
 
   try {
-    const stats = await recordVisitor(env.DB as D1Database, await hashVisitorId(visitorId));
+    const runtime = env as unknown as { DB: D1Database };
+    const stats = await recordVisitor(runtime.DB, await hashVisitorId(visitorId));
     const headers = new Headers({
       'Cache-Control': 'no-store',
       'Content-Type': 'application/json; charset=utf-8',

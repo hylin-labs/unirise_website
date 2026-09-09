@@ -5,6 +5,8 @@ import { Menu, X } from 'lucide-react';
 import { VisitorCounter } from '../components/visitor-counter';
 import { SupportChat } from '../components/support-chat';
 
+/* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- The reconstructed public homepage preserves original asset dimensions and native anchors because framework replacements change its source layout and navigation behavior. */
+
 type MenuGroup = { title: string; id: string; items: { label: string; id: string }[] };
 
 const industryGroups: MenuGroup[] = [

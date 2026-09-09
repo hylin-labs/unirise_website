@@ -3,6 +3,8 @@
 import { useSearchParams } from 'next/navigation';
 import { OriginalFooter, OriginalHeader } from '../original-shell';
 
+/* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- Catalog assets and links retain original markup to preserve the reconstructed site's dimensions, query-string links, and behavior. */
+
 const groupNotes: Record<string, string> = {
   '食材分選': '原網站將天然或加工食品原物料依顏色與外觀瑕疵進行自動化品質分級。',
   'X光機異物檢測': '原網站提供各類食品包裝型態的 X 光檢查，作為食品出廠前的安全把關。',

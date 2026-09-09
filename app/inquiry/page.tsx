@@ -1,17 +1,23 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { type SyntheticEvent, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { OriginalFooter, OriginalHeader } from '../original-shell';
+
+/* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- The inquiry page retains the original source image and anchor markup so its reproduced layout and mailto workflow do not change. */
 
 export default function InquiryPage() {
   const product = useSearchParams().get('product') || '';
   const [sent, setSent] = useState(false);
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const subject = `詢問產品：${form.get('product') || '產品資料索取'}`;
-    const body = [`姓名：${form.get('name')}`, `公司：${form.get('company')}`, `電話：${form.get('phone')}`, `Email：${form.get('email')}`, '', '需求說明：', form.get('message')].join('\n');
+    const value = (name: string) => {
+      const entry = form.get(name);
+      return typeof entry === 'string' ? entry : '';
+    };
+    const subject = `詢問產品：${value('product') || '產品資料索取'}`;
+    const body = [`姓名：${value('name')}`, `公司：${value('company')}`, `電話：${value('phone')}`, `Email：${value('email')}`, '', '需求說明：', value('message')].join('\n');
     window.location.href = `mailto:info-unirise@unirise.tw?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     setSent(true);
   };

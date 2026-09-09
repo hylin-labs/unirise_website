@@ -5,6 +5,8 @@ import { Menu, X } from 'lucide-react';
 import { VisitorCounter } from '../components/visitor-counter';
 import { SupportChat } from '../components/support-chat';
 
+/* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- Shared public chrome preserves original image dimensions and native anchors so its reproduced layout and navigation stay unchanged. */
+
 type MenuGroup = { title: string; id: string; items: { label: string; id: string }[] };
 const tuples = (rows: string[][]) => rows.map(([label, id]) => ({ label, id }));
 const productHref = (kind: 'industry' | 'brand', id: string) => `/catalog?type=${kind}&id=${id}`;

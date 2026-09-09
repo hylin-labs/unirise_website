@@ -39,12 +39,14 @@ export async function recordVisitor(db: D1Database, visitorHash: string): Promis
   }
 
   const [totalResult, todayResult] = await db.batch([
-    db.prepare<{ value: number }>(`SELECT value FROM ${visitorStatsSchema.totals} WHERE metric = 'total_visitors'`),
-    db.prepare<{ count: number }>(`SELECT COUNT(*) AS count FROM ${visitorStatsSchema.visitorDays} WHERE day = ?`).bind(day),
+    db.prepare(`SELECT value FROM ${visitorStatsSchema.totals} WHERE metric = 'total_visitors'`),
+    db.prepare(`SELECT COUNT(*) AS count FROM ${visitorStatsSchema.visitorDays} WHERE day = ?`).bind(day),
   ]);
+  const totalRow = totalResult.results[0] as { value?: unknown } | undefined;
+  const todayRow = todayResult.results[0] as { count?: unknown } | undefined;
 
   return {
-    total: totalResult.results[0]?.value ?? 0,
-    today: todayResult.results[0]?.count ?? 0,
+    total: typeof totalRow?.value === 'number' ? totalRow.value : 0,
+    today: typeof todayRow?.count === 'number' ? todayRow.count : 0,
   };
 }
