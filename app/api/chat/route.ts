@@ -6,8 +6,13 @@ import {
 } from '../../../lib/analytics';
 import { isChatRequestAllowed } from '../../../lib/chat-rate-limit';
 import { retrieveSiteKnowledge } from '../../../lib/site-knowledge';
+import {
+  RequestTooLargeError,
+  readLimitedRequestBody,
+} from '../../../lib/request-body';
 
 const MAX_MESSAGE_LENGTH = 700;
+const MAX_BODY_BYTES = 12_000;
 const GROQ_MODEL = 'openai/gpt-oss-20b';
 const systemPrompt = `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
@@ -65,8 +70,12 @@ export function createChatHandler({
 
     let body: { message?: unknown; history?: unknown };
     try {
-      body = await request.json();
-    } catch {
+      body = JSON.parse(
+        await readLimitedRequestBody(request, MAX_BODY_BYTES),
+      ) as { message?: unknown; history?: unknown };
+    } catch (error) {
+      if (error instanceof RequestTooLargeError)
+        return json('request_too_large', 413);
       return json('invalid_request', 400);
     }
 

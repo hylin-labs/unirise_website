@@ -9,6 +9,10 @@ import {
   type AnalyticsEventName,
 } from '../../../lib/analytics';
 import { readCookie } from '../../../lib/visitor-stats';
+import {
+  RequestTooLargeError,
+  readLimitedRequestBody,
+} from '../../../lib/request-body';
 
 type Authenticate = typeof requireAdmin;
 type HandlerOptions = {
@@ -126,23 +130,16 @@ export function createAnalyticsHandler({
       if (!origin || origin !== url.origin) {
         return jsonError('origin_not_allowed', 403);
       }
-      const declaredSize = Number(request.headers.get('content-length') ?? 0);
-      if (
-        Number.isFinite(declaredSize) &&
-        declaredSize > MAX_PUBLIC_EVENT_BYTES
-      ) {
-        return jsonError('request_too_large', 413);
-      }
       let body: unknown;
       try {
-        const rawBody = await request.text();
-        if (
-          new TextEncoder().encode(rawBody).byteLength > MAX_PUBLIC_EVENT_BYTES
-        ) {
-          return jsonError('request_too_large', 413);
-        }
+        const rawBody = await readLimitedRequestBody(
+          request,
+          MAX_PUBLIC_EVENT_BYTES,
+        );
         body = JSON.parse(rawBody) as unknown;
-      } catch {
+      } catch (error) {
+        if (error instanceof RequestTooLargeError)
+          return jsonError('request_too_large', 413);
         return jsonError('invalid_request', 400);
       }
       const event = validPublicEvent(body);

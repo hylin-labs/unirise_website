@@ -6,6 +6,10 @@ import {
   type LeadMailer,
 } from '../../../lib/lead-service';
 import { sendLeadNotification } from '../../../lib/resend';
+import {
+  RequestTooLargeError,
+  readLimitedRequestBody,
+} from '../../../lib/request-body';
 
 type LeadsHandlerOptions = {
   db: D1Database;
@@ -21,32 +25,6 @@ function errorResponse(error: string, status: number) {
     { error },
     { status, headers: { 'Cache-Control': 'no-store' } },
   );
-}
-
-async function readLimitedBody(request: Request) {
-  const contentLength = request.headers.get('content-length');
-  if (
-    contentLength &&
-    (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_BODY_BYTES)
-  )
-    throw new Error('request_too_large');
-  if (!request.body) throw new Error('invalid_request');
-
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let totalBytes = 0;
-  let body = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > MAX_BODY_BYTES) {
-      await reader.cancel();
-      throw new Error('request_too_large');
-    }
-    body += decoder.decode(value, { stream: true });
-  }
-  return `${body}${decoder.decode()}`;
 }
 
 export function createLeadsHandler({
@@ -74,12 +52,14 @@ export function createLeadsHandler({
 
     let body: Record<string, unknown>;
     try {
-      const value = JSON.parse(await readLimitedBody(request)) as unknown;
+      const value = JSON.parse(
+        await readLimitedRequestBody(request, MAX_BODY_BYTES),
+      ) as unknown;
       if (!value || typeof value !== 'object' || Array.isArray(value))
         return errorResponse('invalid_request', 400);
       body = value as Record<string, unknown>;
     } catch (error) {
-      if (error instanceof Error && error.message === 'request_too_large')
+      if (error instanceof RequestTooLargeError)
         return errorResponse('request_too_large', 413);
       return errorResponse('invalid_request', 400);
     }

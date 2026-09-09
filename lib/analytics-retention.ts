@@ -1,4 +1,5 @@
 import { cleanupExpiredRateLimits } from './chat-rate-limit';
+import { pruneExpiredChatQuestions } from './analytics';
 
 export type RetentionExecutionContext = {
   waitUntil(promise: Promise<unknown>): void;
@@ -9,5 +10,10 @@ export function scheduleAnalyticsRetention(
   context: RetentionExecutionContext,
   now = new Date(),
 ) {
-  context.waitUntil(cleanupExpiredRateLimits(db, now));
+  context.waitUntil(
+    Promise.all([
+      cleanupExpiredRateLimits(db, now),
+      pruneExpiredChatQuestions(db, now),
+    ]),
+  );
 }

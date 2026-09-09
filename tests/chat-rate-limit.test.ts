@@ -9,6 +9,8 @@ type RateLimitRow = {
   request_count: number;
 };
 
+type ChatQuestionRow = { id: string; created_at: string };
+
 class RateLimitStatement {
   private values: unknown[] = [];
 
@@ -25,6 +27,7 @@ class RateLimitStatement {
   async run() {
     const query = this.sql.replace(/\s+/g, ' ').trim().toLowerCase();
     if (query.startsWith('delete from site_chat_rate_limits')) {
+      this.database.deleteTargets.push('site_chat_rate_limits');
       const [chatCutoff, leadCutoff, analyticsCutoff] = this.values.map(String);
       this.database.rows = this.database.rows.filter((row) => {
         if (
@@ -39,6 +42,14 @@ class RateLimitStatement {
         }
         return true;
       });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (query.startsWith('delete from chat_question_log')) {
+      this.database.deleteTargets.push('chat_question_log');
+      const cutoff = String(this.values[0]);
+      this.database.questions = this.database.questions.filter(
+        (row) => row.created_at >= cutoff,
+      );
       return { success: true, meta: { changes: 1 } };
     }
     throw new Error(`Unsupported run: ${this.sql}`);
@@ -69,6 +80,8 @@ class RateLimitStatement {
 
 class RateLimitDatabase {
   rows: RateLimitRow[] = [];
+  questions: ChatQuestionRow[] = [];
+  deleteTargets: string[] = [];
 
   readonly d1 = {
     prepare: (sql: string) =>
@@ -151,6 +164,36 @@ describe('chat throttle privacy and retention', () => {
       'new-chat',
       'new-lead',
       'new-analytics',
+    ]);
+  });
+
+  it('prunes only chat questions older than 90 days during the hourly cleanup', async () => {
+    const database = new RateLimitDatabase();
+    database.questions = [
+      { id: 'expired', created_at: '2026-06-10T20:29:59.999Z' },
+      { id: 'cutoff', created_at: '2026-06-10T20:30:00.000Z' },
+      { id: 'recent', created_at: '2026-06-10T20:30:00.001Z' },
+    ];
+
+    let scheduled: Promise<unknown> | undefined;
+    scheduleAnalyticsRetention(
+      database.d1,
+      {
+        waitUntil(promise) {
+          scheduled = promise;
+        },
+      },
+      NOW,
+    );
+    await scheduled;
+
+    expect(database.questions.map((row) => row.id)).toEqual([
+      'cutoff',
+      'recent',
+    ]);
+    expect(database.deleteTargets).toEqual([
+      'site_chat_rate_limits',
+      'chat_question_log',
     ]);
   });
 });

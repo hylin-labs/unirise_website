@@ -1,10 +1,20 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
+import { mkdtemp } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import {
+  createExclusiveFile,
+  fetchWithTimeout,
+  removeOwnedTemporaryFile,
+  removeOwnedTemporaryFileSync,
+  removeTemporaryArtifact,
+  runCommand,
+  terminateChildTree,
+  terminateChildTreeSync,
+} from './smoke-process.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const node = process.execPath;
@@ -18,30 +28,30 @@ const wrangler = resolve(
 const startWorker = resolve(root, 'scripts', 'start-worker.mjs');
 const config = resolve(root, 'dist', 'server', 'wrangler.json');
 const envFile = resolve(root, '.dev.vars');
-const stateDirectory = await mkdtemp(
-  resolve(tmpdir(), 'unirise-worker-smoke-'),
-);
+const smokeEnvContents = [
+  'GROQ_API_KEY=smoke-groq-sentinel',
+  'RESEND_API_KEY=smoke-resend-sentinel',
+  'RESEND_FROM_EMAIL=smoke@example.test',
+  'ADMIN_AUTH_PEPPER=smoke-admin-pepper-at-least-32-characters',
+  'ANALYTICS_HASH_PEPPER=smoke-analytics-pepper-at-least-32-characters',
+  '',
+].join('\n');
+const commandTimeoutMs = 120_000;
+const workerReadyTimeoutMs = 20_000;
+const activeChildren = new Set();
+const smokeState = { directory: undefined };
+let worker;
+let createdEnvFile = false;
+let cleanupPromise;
+let shuttingDown = false;
 
 function run(command, args, options = {}) {
-  return new Promise((resolveRun, reject) => {
-    const child = spawn(command, args, {
-      cwd: root,
-      stdio: 'pipe',
-      windowsHide: true,
-      ...options,
-    });
-    let output = '';
-    child.stdout.on('data', (chunk) => {
-      output += String(chunk);
-    });
-    child.stderr.on('data', (chunk) => {
-      output += String(chunk);
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) resolveRun(output);
-      else reject(new Error(`${command} exited ${code}: ${output}`));
-    });
+  return runCommand(command, args, {
+    cwd: root,
+    timeoutMs: commandTimeoutMs,
+    onSpawn: (child) => activeChildren.add(child),
+    onExit: (child) => activeChildren.delete(child),
+    ...options,
   });
 }
 
@@ -74,18 +84,27 @@ async function freePort() {
 async function waitForConfiguredLeadsRoute(port) {
   const url = `http://127.0.0.1:${port}/api/leads`;
   let lastError;
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  const deadline = Date.now() + workerReadyTimeoutMs;
+  while (Date.now() < deadline) {
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Origin: `http://127.0.0.1:${port}`,
-          'Content-Type': 'application/json',
-          'CF-Connecting-IP': '203.0.113.31',
+      const { response, body } = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            Origin: `http://127.0.0.1:${port}`,
+            'Content-Type': 'application/json',
+            'CF-Connecting-IP': '203.0.113.31',
+          },
+          body: '{',
         },
-        body: '{',
-      });
-      const body = await response.json();
+        {
+          consume: async (result) => ({
+            response: result,
+            body: await result.json(),
+          }),
+        },
+      );
       if (response.status === 400 && body.error === 'invalid_request') return;
       throw new Error(
         `Unexpected response: ${response.status} ${JSON.stringify(body)}`,
@@ -98,56 +117,72 @@ async function waitForConfiguredLeadsRoute(port) {
   throw lastError ?? new Error('Worker did not become ready');
 }
 
-async function stopWorker(child) {
-  if (!child || child.exitCode !== null) return;
-  const exited = new Promise((resolveExit) => child.once('exit', resolveExit));
-  child.kill('SIGTERM');
-  await Promise.race([
-    exited,
-    new Promise((resolveTimeout) =>
-      setTimeout(() => {
-        child.kill('SIGKILL');
-        resolveTimeout();
-      }, 5_000),
-    ),
-  ]);
+async function cleanup() {
+  if (cleanupPromise) return cleanupPromise;
+  cleanupPromise = (async () => {
+    const children = [...activeChildren];
+    const results = await Promise.allSettled(
+      children.map((child) => terminateChildTree(child)),
+    );
+    activeChildren.clear();
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') activeChildren.add(children[index]);
+    });
+    const workerResult = await Promise.allSettled([terminateChildTree(worker)]);
+    const artifactResults = await Promise.allSettled([
+      ...(createdEnvFile
+        ? [removeOwnedTemporaryFile(envFile, smokeEnvContents)]
+        : []),
+      ...(smokeState.directory
+        ? [removeTemporaryArtifact(smokeState.directory)]
+        : []),
+    ]);
+    const failures = [...results, ...workerResult, ...artifactResults].filter(
+      (result) => result.status === 'rejected',
+    );
+    if (failures.length > 0) throw new AggregateError(failures);
+  })();
+  return cleanupPromise;
 }
 
-async function removeStateDirectory() {
-  let lastError;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      await rm(stateDirectory, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-    }
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    await cleanup();
+  } catch (error) {
+    console.error(`Smoke cleanup after ${signal} failed:`, error);
   }
-  throw lastError;
+  process.exit(signal === 'SIGINT' ? 130 : 143);
 }
 
-let worker;
-let createdEnvFile = false;
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => void shutdown(signal));
+}
+
+process.once('exit', () => {
+  for (const child of activeChildren) terminateChildTreeSync(child);
+  terminateChildTreeSync(worker);
+  try {
+    if (createdEnvFile) removeOwnedTemporaryFileSync(envFile, smokeEnvContents);
+  } catch {}
+  try {
+    if (smokeState.directory)
+      rmSync(smokeState.directory, { recursive: true, force: true });
+  } catch {}
+});
+
+smokeState.directory = await mkdtemp(
+  resolve(tmpdir(), 'unirise-worker-smoke-'),
+);
+let failure;
 try {
-  if (existsSync(envFile)) {
+  createdEnvFile = await createExclusiveFile(envFile, smokeEnvContents);
+  if (!createdEnvFile) {
     throw new Error(
       'Refusing to replace an existing root .dev.vars during smoke testing.',
     );
   }
-  await writeFile(
-    envFile,
-    [
-      'GROQ_API_KEY=smoke-groq-sentinel',
-      'RESEND_API_KEY=smoke-resend-sentinel',
-      'RESEND_FROM_EMAIL=smoke@example.test',
-      'ADMIN_AUTH_PEPPER=smoke-admin-pepper-at-least-32-characters',
-      'ANALYTICS_HASH_PEPPER=smoke-analytics-pepper-at-least-32-characters',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  createdEnvFile = true;
 
   await runNpm(['run', 'build']);
   for (const migration of [
@@ -164,7 +199,7 @@ try {
       '--config',
       config,
       '--persist-to',
-      stateDirectory,
+      smokeState.directory,
       '--file',
       resolve(root, 'drizzle', migration),
       '--yes',
@@ -177,7 +212,7 @@ try {
     [
       startWorker,
       '--persist-to',
-      stateDirectory,
+      smokeState.directory,
       '--port',
       String(port),
       '--ip',
@@ -185,12 +220,22 @@ try {
       '--log-level',
       'error',
     ],
-    { cwd: root, stdio: 'pipe', windowsHide: true },
+    {
+      cwd: root,
+      stdio: 'pipe',
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+    },
   );
   await waitForConfiguredLeadsRoute(port);
   console.log('Local Worker smoke test passed.');
-} finally {
-  await stopWorker(worker);
-  if (createdEnvFile) await unlink(envFile).catch(() => undefined);
-  await removeStateDirectory();
+} catch (error) {
+  failure = error;
 }
+try {
+  await cleanup();
+} catch (cleanupError) {
+  if (failure) console.error('Smoke cleanup failed:', cleanupError);
+  else failure = cleanupError;
+}
+if (failure) throw failure;

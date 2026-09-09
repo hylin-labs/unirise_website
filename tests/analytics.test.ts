@@ -620,6 +620,50 @@ describe('analytics route boundaries', () => {
     expect(database.events).toEqual([]);
   });
 
+  it('rejects an oversized chunked public event before rate-limit or semantic work', async () => {
+    const database = new AnalyticsDatabase();
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            JSON.stringify({
+              name: 'page_view',
+              path: '/',
+              padding: 'x'.repeat(3_000),
+            }),
+          ),
+        );
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
+
+    const response = await handler(
+      new Request('https://unirise.tw/api/analytics', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://unirise.tw',
+          Cookie: 'unirise_visitor=oversized-stream',
+          'CF-Connecting-IP': '203.0.113.12',
+          'Content-Type': 'application/json',
+        },
+        body,
+        duplex: 'half',
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(database.rateLimits).toEqual([]);
+    expect(database.events).toEqual([]);
+  });
+
   it('rate-limits repeated event writes for one anonymous visitor', async () => {
     const database = new AnalyticsDatabase();
     const handler = createAnalyticsHandler({
@@ -788,6 +832,50 @@ describe('analytics route boundaries', () => {
 });
 
 describe('chat analytics integration', () => {
+  it('rejects an oversized chunked chat body before rate-limit or retrieval work', async () => {
+    const database = new AnalyticsDatabase();
+    const isAllowed = vi.fn(async () => true);
+    const retrieveKnowledge = vi.fn(async () => []);
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            JSON.stringify({ message: 'x'.repeat(13_000) }),
+          ),
+        );
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed,
+      retrieveKnowledge,
+      analyticsHashPepper: TEST_ANALYTICS_PEPPER,
+    });
+
+    const response = await handler(
+      new Request('https://unirise.tw/api/chat', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://unirise.tw',
+          'Content-Type': 'application/json',
+          'CF-Connecting-IP': '203.0.113.44',
+        },
+        body,
+        duplex: 'half',
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(isAllowed).not.toHaveBeenCalled();
+    expect(retrieveKnowledge).not.toHaveBeenCalled();
+  });
+
   it('records accepted unanswered questions without making analytics a chat dependency', async () => {
     const database = new AnalyticsDatabase();
     const handler = createChatHandler({
