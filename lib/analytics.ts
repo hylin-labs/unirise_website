@@ -21,6 +21,8 @@ export type DashboardMetrics = {
 
 export type DashboardRange = { from: string; to: string };
 
+const CHAT_QUESTION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
 export type DashboardSnapshot = {
   metrics: DashboardMetrics;
   unansweredQuestions: Array<{
@@ -96,6 +98,8 @@ const EVENT_NAMES = new Set<AnalyticsEventName>([
   'inquiry_submitted',
 ]);
 const PUBLIC_EVENT_LIMIT_PER_MINUTE = 60;
+const ENGLISH_ADDRESS_PATTERN = String.raw`(?:\bP\.?\s*O\.?\s+Box\s+\d+\b|\b\d{1,6}\s+(?:[A-Z0-9.'-]+\s+){0,8}(?:Street|St|Road|Rd|Avenue|Ave|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Highway|Hwy)\b)`;
+const CHINESE_ADDRESS_PATTERN = String.raw`(?:地址|住址|住在|居住|寄送到|寄到)?[\u4e00-\u9fff]{0,24}(?:路|街|段|巷|弄)\s*\d{1,6}\s*(?:之\s*\d{1,4}\s*)?號`;
 
 function asNumber(value: number | string | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -134,6 +138,7 @@ export async function hashVisitorIdentifier(
     | 'analytics-visitor'
     | 'analytics-throttle'
     | 'chat-visitor'
+    | 'chat-throttle'
     | 'lead-visitor'
     | 'lead-throttle',
 ) {
@@ -270,6 +275,8 @@ export function sanitizeQuestion(value: string) {
       /(?:地址|住址)?[\u4e00-\u9fff]{2,10}[市縣][\u4e00-\u9fff0-9\-之弄巷路街段區鄉鎮村里]{2,80}號/gu,
       '[地址已隱藏]',
     )
+    .replace(new RegExp(ENGLISH_ADDRESS_PATTERN, 'gi'), '[地址已隱藏]')
+    .replace(new RegExp(CHINESE_ADDRESS_PATTERN, 'gu'), '[地址已隱藏]')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 300)
@@ -285,7 +292,9 @@ function containsHighlySensitiveText(value: string) {
     /(?:\d[ -]*?){13,19}/.test(value) ||
     /(?:地址|住址)?[\u4e00-\u9fff]{2,10}[市縣][\u4e00-\u9fff0-9\-之弄巷路街段區鄉鎮村里]{2,80}號/u.test(
       value,
-    )
+    ) ||
+    new RegExp(ENGLISH_ADDRESS_PATTERN, 'i').test(value) ||
+    new RegExp(CHINESE_ADDRESS_PATTERN, 'u').test(value)
   );
 }
 
@@ -305,7 +314,7 @@ export async function recordChatOutcome(
   },
 ) {
   const now = input.createdAt ?? new Date();
-  const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(now.getTime() - CHAT_QUESTION_RETENTION_MS);
   if (containsHighlySensitiveText(input.question)) {
     await db
       .prepare(
@@ -337,6 +346,17 @@ export async function recordChatOutcome(
         now.toISOString(),
       ),
   ]);
+}
+
+export async function pruneExpiredChatQuestions(
+  db: D1Database,
+  now = new Date(),
+) {
+  const cutoff = new Date(now.getTime() - CHAT_QUESTION_RETENTION_MS);
+  await db
+    .prepare(`DELETE FROM ${uniriseSchema.chatQuestions} WHERE created_at < ?`)
+    .bind(cutoff.toISOString())
+    .run();
 }
 
 export async function getDashboardMetrics(
@@ -409,6 +429,9 @@ export async function getDashboardSnapshot(
   range: DashboardRange,
 ): Promise<DashboardSnapshot> {
   const bounds = dashboardBounds(range);
+  const questionCutoff = new Date(
+    Date.now() - CHAT_QUESTION_RETENTION_MS,
+  ).toISOString();
   const [
     metrics,
     gaps,
@@ -427,7 +450,10 @@ export async function getDashboardSnapshot(
            WHERE created_at >= ? AND created_at < ? AND outcome = 'unanswered'
            ORDER BY created_at DESC LIMIT 100`,
       )
-      .bind(bounds.from, bounds.to)
+      .bind(
+        bounds.from > questionCutoff ? bounds.from : questionCutoff,
+        bounds.to,
+      )
       .all<{
         id: string;
         question: string;

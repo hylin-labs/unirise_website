@@ -331,6 +331,13 @@
 .fullField {
   grid-column: 1 / -1;
 }
+.editorNotice {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.6;
+}
 .editorActions {
   justify-content: flex-end;
   margin-top: 16px;

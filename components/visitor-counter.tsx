@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { publicAnalyticsPath } from '../lib/public-analytics-path';
 import styles from './visitor-counter.module.css';
 
 type VisitorStats = { total: number; today: number };
@@ -12,7 +13,10 @@ export function VisitorCounter() {
 
   useEffect(() => {
     let active = true;
-    const pagePath = `${window.location.pathname}${window.location.search}`;
+    const pagePath = publicAnalyticsPath(
+      window.location.pathname,
+      window.location.search,
+    );
     const track = (
       name: 'page_view' | 'download_click',
       path: string,
@@ -34,6 +38,7 @@ export function VisitorCounter() {
         if (active && nextStats) setStats(nextStats);
         if (
           nextStats &&
+          pagePath &&
           window.location.hostname !== 'localhost' &&
           window.location.hostname !== '127.0.0.1' &&
           window.location.pathname !== '/admin' &&
@@ -54,9 +59,10 @@ export function VisitorCounter() {
       if (
         url.origin === window.location.origin &&
         url.pathname === '/downloads' &&
-        downloadId
+        downloadId &&
+        /^\d{1,12}$/.test(downloadId)
       ) {
-        void track('download_click', `${url.pathname}${url.search}`, {
+        void track('download_click', `/downloads?id=${downloadId}`, {
           downloadId,
         });
       }

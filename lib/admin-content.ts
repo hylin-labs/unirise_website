@@ -14,6 +14,21 @@ export type AdminContentEditor = {
   status: 'draft' | 'published';
 };
 
+export function redirectAdminUnauthorized(
+  response: Pick<Response, 'status'>,
+  location: { assign(path: string): void },
+) {
+  if (response.status !== 401) return false;
+  location.assign('/admin/login');
+  return true;
+}
+
+export function parseDatabaseTimestamp(value: string) {
+  const sqliteTimestamp =
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(value);
+  return new Date(sqliteTimestamp ? `${value.replace(' ', 'T')}Z` : value);
+}
+
 export function emptyAdminContentEditor(
   kind: AdminContentKind,
 ): AdminContentEditor {
@@ -38,6 +53,7 @@ function idField(id: string) {
 }
 
 export function buildAdminContentPayload(editor: AdminContentEditor) {
+  const status = editor.id ? editor.status : 'draft';
   if (editor.kind === 'news') {
     return {
       ...idField(editor.id),
@@ -50,7 +66,7 @@ export function buildAdminContentPayload(editor: AdminContentEditor) {
         .map((item) => item.trim())
         .filter(Boolean),
       videoUrl: editor.videoUrl || null,
-      status: editor.status,
+      status,
     };
   }
   if (editor.kind === 'downloads') {
@@ -58,7 +74,7 @@ export function buildAdminContentPayload(editor: AdminContentEditor) {
       ...idField(editor.id),
       legacyId: editor.legacyId,
       title: editor.title,
-      status: editor.status,
+      status,
     };
   }
   return {
@@ -70,6 +86,6 @@ export function buildAdminContentPayload(editor: AdminContentEditor) {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean),
-    status: editor.status,
+    status,
   };
 }

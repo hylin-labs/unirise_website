@@ -4,6 +4,7 @@ import {
   getDashboardSnapshot,
   hashVisitorIdentifier,
   isPublicEventRequestAllowed,
+  pruneExpiredChatQuestions,
   recordEvent,
   type AnalyticsEventName,
 } from '../../../lib/analytics';
@@ -72,9 +73,9 @@ function canonicalPublicEventPath(event: ReturnType<typeof validPublicEvent>) {
   const allowedKeys: Record<string, string[]> = {
     '/': [],
     '/news': ['id'],
-    '/downloads': ['id', 'collection'],
+    '/downloads': ['id'],
     '/catalog': ['type', 'id'],
-    '/inquiry': ['product'],
+    '/inquiry': [],
     '/contact': [],
   };
   const keys = allowedKeys[url.pathname];
@@ -91,13 +92,9 @@ function canonicalPublicEventPath(event: ReturnType<typeof validPublicEvent>) {
   if (id && !/^\d{1,12}$/.test(id)) return null;
   const type = url.searchParams.get('type');
   if (type && type !== 'brand' && type !== 'industry') return null;
-  const collection = url.searchParams.get('collection');
-  const product = url.searchParams.get('product');
-  if (
-    (collection && collection.length > 160) ||
-    (product && product.length > 160)
-  ) {
-    return null;
+  if (url.pathname === '/catalog') {
+    const keyCount = [...url.searchParams.keys()].length;
+    if (keyCount !== 0 && (!type || !id || keyCount !== 2)) return null;
   }
   if (event.name === 'download_click') {
     if (url.pathname !== '/downloads' || !id) return null;
@@ -221,6 +218,7 @@ export function createAnalyticsHandler({
     const from = url.searchParams.get('from') ?? '';
     const to = url.searchParams.get('to') ?? '';
     try {
+      await pruneExpiredChatQuestions(db);
       const snapshot = await getDashboardSnapshot(db, { from, to });
       return Response.json(snapshot, {
         headers: { 'Cache-Control': 'no-store' },

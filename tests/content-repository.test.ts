@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AdminIdentity } from '../lib/admin-auth';
-import { buildAdminContentPayload } from '../lib/admin-content';
+import {
+  buildAdminContentPayload,
+  parseDatabaseTimestamp,
+  redirectAdminUnauthorized,
+} from '../lib/admin-content';
 import {
   ContentConflictError,
   ContentValidationError,
@@ -28,6 +32,32 @@ const admin: AdminIdentity = {
 };
 
 describe('managed content repository', () => {
+  it('parses legacy SQLite timestamps as UTC before Taipei display', () => {
+    expect(parseDatabaseTimestamp('2026-09-08 12:34:56').toISOString()).toBe(
+      '2026-09-08T12:34:56.000Z',
+    );
+    expect(
+      parseDatabaseTimestamp('2026-09-08T12:34:56.000+08:00').toISOString(),
+    ).toBe('2026-09-08T04:34:56.000Z');
+  });
+
+  it('redirects expired admin mutations to the login page', () => {
+    let redirectedTo = '';
+    const location = {
+      assign(path: string) {
+        redirectedTo = path;
+      },
+    };
+
+    expect(
+      redirectAdminUnauthorized(new Response(null, { status: 401 }), location),
+    ).toBe(true);
+    expect(redirectedTo).toBe('/admin/login');
+    expect(
+      redirectAdminUnauthorized(new Response(null, { status: 409 }), location),
+    ).toBe(false);
+  });
+
   it('builds complete create and edit payloads for every admin content form', () => {
     expect(
       buildAdminContentPayload({
@@ -69,7 +99,7 @@ describe('managed content repository', () => {
         tagsText: '',
         status: 'published',
       }),
-    ).toEqual({ legacyId: '9002', title: 'Brochure', status: 'published' });
+    ).toEqual({ legacyId: '9002', title: 'Brochure', status: 'draft' });
     expect(
       buildAdminContentPayload({
         kind: 'knowledge',

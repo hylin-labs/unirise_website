@@ -335,6 +335,60 @@ describe('analytics metrics', () => {
     expect(JSON.stringify(payload)).not.toContain('06-3319283');
   });
 
+  it('deletes and excludes chat questions older than 90 days during authenticated dashboard reads', async () => {
+    const database = new AnalyticsDatabase();
+    database.questions.push(
+      {
+        id: 'stale-gap',
+        question: 'Old unanswered question',
+        outcome: 'unanswered',
+        source_ids_json: '[]',
+        created_at: '2026-05-01T00:00:00.000Z',
+      },
+      {
+        id: 'cutoff-gap',
+        question: 'Question at the exact retention boundary',
+        outcome: 'unanswered',
+        source_ids_json: '[]',
+        created_at: '2026-06-04T12:00:00.000Z',
+      },
+      {
+        id: 'recent-gap',
+        question: 'Recent unanswered question',
+        outcome: 'unanswered',
+        source_ids_json: '[]',
+        created_at: '2026-09-01T00:00:00.000Z',
+      },
+    );
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      authenticate: async () => ({
+        id: 'owner',
+        email: 'owner@example.com',
+        role: 'admin',
+      }),
+    });
+
+    const response = await handler(
+      new Request(
+        'https://unirise.tw/api/analytics?from=2026-01-01&to=2026-09-03',
+      ),
+    );
+    const payload = (await response.json()) as {
+      unansweredQuestions: Array<{ id: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.unansweredQuestions).toEqual([
+      expect.objectContaining({ id: 'recent-gap' }),
+      expect.objectContaining({ id: 'cutoff-gap' }),
+    ]);
+    expect(database.questions.map((row) => row.id)).toEqual([
+      'cutoff-gap',
+      'recent-gap',
+    ]);
+  });
+
   it('uses inclusive Asia/Taipei calendar days for dashboard bounds', () => {
     expect(dashboardBounds({ from: '2026-09-01', to: '2026-09-01' })).toEqual({
       from: '2026-08-31T16:00:00.000Z',
@@ -369,6 +423,8 @@ describe('analytics metrics', () => {
     '我的密碼是 super-secret-123，請幫我登入',
     '信用卡是 4111 1111 1111 1111',
     '身分證 A123456789，地址台南市東區裕義路598號',
+    'Please deliver to 123 Main Street, Springfield, CA 90210',
+    '請寄到信義區松仁路 100 號',
   ])('refuses to persist broadly sensitive chat text: %s', async (question) => {
     const database = new AnalyticsDatabase();
 
@@ -383,6 +439,30 @@ describe('analytics metrics', () => {
 });
 
 describe('analytics route boundaries', () => {
+  it('does not prune expired chat questions for an unauthenticated read', async () => {
+    const database = new AnalyticsDatabase();
+    database.questions.push({
+      id: 'stale-gap',
+      question: 'Old unanswered question',
+      outcome: 'unanswered',
+      source_ids_json: '[]',
+      created_at: '2026-05-01T00:00:00.000Z',
+    });
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      authenticate: async () => null,
+    });
+
+    const response = await handler(
+      new Request(
+        'https://unirise.tw/api/analytics?from=2026-01-01&to=2026-09-03',
+      ),
+    );
+
+    expect(response.status).toBe(401);
+    expect(database.questions.map((row) => row.id)).toEqual(['stale-gap']);
+  });
+
   it('rejects dashboard data without an administrator session', async () => {
     const database = new AnalyticsDatabase();
     const handler = createAnalyticsHandler({
@@ -576,6 +656,36 @@ describe('analytics route boundaries', () => {
 
     expect(invalidPath.status).toBe(400);
     expect(unpublishedDownload.status).toBe(400);
+    expect(database.events).toEqual([]);
+  });
+
+  it('does not store free-text product or collection query parameters', async () => {
+    const database = new AnalyticsDatabase();
+    const handler = createAnalyticsHandler({
+      db: database.d1,
+      hashPepper: TEST_ANALYTICS_PEPPER,
+    });
+    const headers = {
+      Origin: 'https://unirise.tw',
+      Cookie: 'unirise_visitor=browser-id',
+      'CF-Connecting-IP': '203.0.113.12',
+      'Content-Type': 'application/json',
+    };
+
+    for (const path of [
+      '/inquiry?product=buyer@example.com',
+      '/downloads?collection=Confidential%20Project',
+    ]) {
+      const response = await handler(
+        new Request('https://unirise.tw/api/analytics', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ name: 'page_view', path }),
+        }),
+      );
+      expect(response.status).toBe(400);
+    }
+
     expect(database.events).toEqual([]);
   });
 

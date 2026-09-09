@@ -7,6 +7,8 @@ import type { AdminIdentity } from '../lib/admin-auth';
 import {
   buildAdminContentPayload,
   emptyAdminContentEditor,
+  parseDatabaseTimestamp,
+  redirectAdminUnauthorized,
   type AdminContentEditor,
   type AdminContentKind,
 } from '../lib/admin-content';
@@ -53,7 +55,7 @@ function formatDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'Asia/Taipei',
-  }).format(new Date(value));
+  }).format(parseDatabaseTimestamp(value));
 }
 
 function Empty({ children }: { children: string }) {
@@ -117,6 +119,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status }),
       });
+      if (redirectAdminUnauthorized(response, window.location)) return;
       if (response.status === 409) {
         setError('內容已由其他工作階段更新。資料已重新載入，請再次確認。');
       } else if (!response.ok) {
@@ -166,6 +169,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildAdminContentPayload(editor)),
       });
+      if (redirectAdminUnauthorized(response, window.location)) return;
       if (response.status === 409) {
         setError('內容已由其他工作階段更新。資料已重新載入，請再次編輯。');
       } else if (!response.ok) {
@@ -502,23 +506,13 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                           </label>
                         </>
                       ) : null}
-                      <label>
-                        儲存狀態
-                        <select
-                          value={editor.status}
-                          onChange={(event) =>
-                            setEditor({
-                              ...editor,
-                              status: event.target.value as
-                                | 'draft'
-                                | 'published',
-                            })
-                          }
-                        >
-                          <option value="draft">草稿</option>
-                          <option value="published">發布</option>
-                        </select>
-                      </label>
+                      <p className={styles.editorNotice}>
+                        發布狀態：
+                        {editor.id && editor.status === 'published'
+                          ? '已發布'
+                          : '草稿'}
+                        。儲存不會變更發布狀態；請使用內容清單中的發布按鈕。
+                      </p>
                     </div>
                     <div className={styles.editorActions}>
                       <button

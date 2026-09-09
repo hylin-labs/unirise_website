@@ -93,7 +93,9 @@ export function createChatHandler({
     }
     let sources: Awaited<ReturnType<typeof retrieveSiteKnowledge>>;
     try {
-      if (!(await isAllowed(db, visitorId))) return json('rate_limited', 429);
+      if (!(await isAllowed(db, visitorId, analyticsHashPepper))) {
+        return json('rate_limited', 429);
+      }
       if (visitorHash) {
         try {
           await recordEvent(db, {
