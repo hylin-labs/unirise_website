@@ -6,6 +6,7 @@ import { createAnalyticsHandler } from '../app/api/analytics/route';
 import { createChatHandler } from '../app/api/chat/route';
 import {
   getDashboardMetrics,
+  getDashboardSnapshot,
   dashboardBounds,
   hashVisitorIdentifier,
   recordChatOutcome,
@@ -140,7 +141,11 @@ class AnalyticsDatabase {
       query.includes('from site_events') &&
       query.includes('unique_visitors')
     ) {
-      const rows = this.events.filter(inRange);
+      const rows = this.events
+        .filter(inRange)
+        .filter(
+          (row) => !query.includes('locale = ?') || row.locale === values[2],
+        );
       const count = (name: string) =>
         rows.filter((row) => row.name === name).length;
       return [
@@ -174,7 +179,10 @@ class AnalyticsDatabase {
       const totals = new Map<string, number>();
       for (const row of this.events
         .filter(inRange)
-        .filter((row) => row.name === name)) {
+        .filter((row) => row.name === name)
+        .filter(
+          (row) => !query.includes('locale = ?') || row.locale === values[3],
+        )) {
         totals.set(String(row.path), (totals.get(String(row.path)) ?? 0) + 1);
       }
       return [...totals].map(([path, count]) => ({ path, count }));
@@ -202,6 +210,65 @@ function rowFromInsert(sql: string, values: unknown[]) {
 }
 
 describe('analytics metrics', () => {
+  it('keeps per-locale totals and rankings alongside unduplicated site totals', async () => {
+    const database = new AnalyticsDatabase();
+    for (const locale of ['zh-TW', 'en'] as const) {
+      for (const name of [
+        'page_view',
+        'download_click',
+        'chat_question',
+        'chat_unanswered',
+        'inquiry_submitted',
+      ] as const) {
+        await recordEvent(database.d1, {
+          locale,
+          name,
+          visitorHash: 'same-visitor',
+          path: locale === 'en' ? '/en/downloads?id=78' : '/downloads?id=78',
+        });
+      }
+      await recordChatOutcome(database.d1, {
+        locale,
+        question: 'Where is the guide? buyer@example.com',
+        outcome: 'unanswered',
+        sourceIds: [],
+      });
+    }
+    const snapshot = await getDashboardSnapshot(database.d1, {
+      from: '2026-09-01',
+      to: '2026-09-03',
+    });
+    expect(snapshot.metrics).toMatchObject({
+      uniqueVisitors: 1,
+      pageViews: 2,
+      downloadClicks: 2,
+      chatQuestions: 2,
+      leads: 2,
+    });
+    for (const locale of ['zh-TW', 'en'] as const) {
+      expect(snapshot.byLocale[locale].metrics).toMatchObject({
+        uniqueVisitors: 1,
+        pageViews: 1,
+        downloadClicks: 1,
+        chatQuestions: 1,
+        unansweredQuestions: 1,
+        leads: 1,
+      });
+      expect(snapshot.byLocale[locale].topDownloads).toEqual([
+        {
+          path: locale === 'en' ? '/en/downloads?id=78' : '/downloads?id=78',
+          count: 1,
+        },
+      ]);
+      expect(
+        snapshot.unansweredQuestions.find((row) => row.locale === locale)
+          ?.question,
+      ).not.toContain('buyer@example.com');
+    }
+    expect(database.events.every((row) => row.metadata_json === '{}')).toBe(
+      true,
+    );
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
@@ -212,16 +279,19 @@ describe('analytics metrics', () => {
   it('calculates conversion from leads divided by distinct visitors', async () => {
     const database = new AnalyticsDatabase();
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'a',
       name: 'page_view',
       path: '/',
     });
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'b',
       name: 'page_view',
       path: '/news',
     });
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'lead-edge-identifier',
       name: 'inquiry_submitted',
       path: '/',
@@ -243,21 +313,25 @@ describe('analytics metrics', () => {
   it('uses accepted questions as the answer-rate denominator and returns zero for empty ratios', async () => {
     const database = new AnalyticsDatabase();
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'visitor-a',
       name: 'chat_question',
       path: '/catalog',
     });
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'visitor-a',
       name: 'chat_answered',
       path: '/catalog',
     });
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'visitor-b',
       name: 'chat_question',
       path: '/news',
     });
     await recordEvent(database.d1, {
+      locale: 'zh-TW',
       visitorHash: 'visitor-b',
       name: 'chat_unanswered',
       path: '/news',
@@ -287,6 +361,7 @@ describe('analytics metrics', () => {
     });
 
     await recordChatOutcome(database.d1, {
+      locale: 'zh-TW',
       question: '請寄給 buyer@example.com，電話 0912-345-678。\u0000',
       outcome: 'answered',
       sourceIds: ['catalog-xavis-xray', 'catalog-xavis-xray', 'bad id!'],
@@ -315,6 +390,7 @@ describe('analytics metrics', () => {
     });
 
     await recordChatOutcome(database.d1, {
+      locale: 'zh-TW',
       question: 'Please deliver to 123 Main Street',
       outcome: 'unanswered',
       sourceIds: [],
@@ -452,6 +528,7 @@ describe('analytics metrics', () => {
     const database = new AnalyticsDatabase();
 
     await recordChatOutcome(database.d1, {
+      locale: 'zh-TW',
       question,
       outcome: 'unanswered',
       sourceIds: [],
@@ -462,6 +539,55 @@ describe('analytics metrics', () => {
 });
 
 describe('analytics route boundaries', () => {
+  it.each([
+    ['en', '/en/news', 'page_view', undefined, 202],
+    [
+      'en',
+      '/en/downloads?id=78',
+      'download_click',
+      { downloadId: '78', email: 'secret@example.com' },
+      202,
+    ],
+    ['zh-TW', '/en/news', 'page_view', undefined, 400],
+    ['en', '/news', 'page_view', undefined, 400],
+    ['fr', '/en/news', 'page_view', undefined, 400],
+    [undefined, '/en/news', 'page_view', undefined, 400],
+    [
+      'en',
+      '/en/inquiry?product=private@example.com',
+      'page_view',
+      undefined,
+      400,
+    ],
+  ])(
+    'validates locale %s and path %s for public events',
+    async (locale, path, name, metadata, status) => {
+      const database = new AnalyticsDatabase();
+      const handler = createAnalyticsHandler({
+        db: database.d1,
+        hashPepper: TEST_ANALYTICS_PEPPER,
+      });
+      const response = await handler(
+        new Request('https://unirise.tw/api/analytics', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://unirise.tw',
+            Cookie: 'unirise_visitor=visitor-en',
+            'CF-Connecting-IP': '203.0.113.12',
+          },
+          body: JSON.stringify({ locale, path, name, metadata }),
+        }),
+      );
+      expect(response.status).toBe(status);
+      if (status === 202) {
+        expect(database.events[0]).toMatchObject({ locale: 'en', path, name });
+        expect(database.events[0].visitor_hash).toMatch(/^[a-f0-9]{64}$/);
+        expect(JSON.stringify(database.events)).not.toContain(
+          'secret@example.com',
+        );
+      } else expect(database.events).toEqual([]);
+    },
+  );
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
@@ -526,7 +652,7 @@ describe('analytics route boundaries', () => {
           Cookie: 'unirise_visitor=opaque-browser-id',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'page_view', path }),
+        body: JSON.stringify({ locale: 'zh-TW', name: 'page_view', path }),
       }),
     );
 
@@ -552,6 +678,7 @@ describe('analytics route boundaries', () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          locale: 'zh-TW',
           name: 'download_click',
           path: '/downloads?id=78',
           metadata: { downloadId: '78', email: 'secret@example.com' },
@@ -585,7 +712,7 @@ describe('analytics route boundaries', () => {
           Cookie: 'unirise_visitor=opaque-browser-id',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'page_view', path: '/' }),
+        body: JSON.stringify({ locale: 'zh-TW', name: 'page_view', path: '/' }),
       }),
     );
 
@@ -606,6 +733,7 @@ describe('analytics route boundaries', () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          locale: 'zh-TW',
           name: 'page_view',
           path: '/',
           padding: 'x'.repeat(3_000),
@@ -628,6 +756,7 @@ describe('analytics route boundaries', () => {
         controller.enqueue(
           new TextEncoder().encode(
             JSON.stringify({
+              locale: 'zh-TW',
               name: 'page_view',
               path: '/',
               padding: 'x'.repeat(3_000),
@@ -683,7 +812,11 @@ describe('analytics route boundaries', () => {
               'CF-Connecting-IP': '203.0.113.13',
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ name: 'page_view', path: '/news' }),
+            body: JSON.stringify({
+              locale: 'zh-TW',
+              name: 'page_view',
+              path: '/news',
+            }),
           }),
         ),
       );
@@ -713,7 +846,11 @@ describe('analytics route boundaries', () => {
       new Request('https://unirise.tw/api/analytics', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: 'page_view', path: '/made-up-page' }),
+        body: JSON.stringify({
+          locale: 'zh-TW',
+          name: 'page_view',
+          path: '/made-up-page',
+        }),
       }),
     );
     const unpublishedDownload = await handler(
@@ -721,6 +858,7 @@ describe('analytics route boundaries', () => {
         method: 'POST',
         headers,
         body: JSON.stringify({
+          locale: 'zh-TW',
           name: 'download_click',
           path: '/downloads?id=999',
           metadata: { downloadId: '999' },
@@ -754,7 +892,7 @@ describe('analytics route boundaries', () => {
         new Request('https://unirise.tw/api/analytics', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ name: 'page_view', path }),
+          body: JSON.stringify({ locale: 'zh-TW', name: 'page_view', path }),
         }),
       );
       expect(response.status).toBe(400);
@@ -783,6 +921,7 @@ describe('analytics route boundaries', () => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
+              locale: 'zh-TW',
               name: 'download_click',
               path: '/downloads?id=999',
               metadata: { downloadId: '999' },
@@ -818,7 +957,11 @@ describe('analytics route boundaries', () => {
               'CF-Connecting-IP': '203.0.113.12',
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ name: 'page_view', path: '/news' }),
+            body: JSON.stringify({
+              locale: 'zh-TW',
+              name: 'page_view',
+              path: '/news',
+            }),
           }),
         ),
       );
@@ -832,6 +975,63 @@ describe('analytics route boundaries', () => {
 });
 
 describe('chat analytics integration', () => {
+  it.each(['answered', 'unanswered'] as const)(
+    'records English %s outcomes with redacted questions and separate locale columns',
+    async (outcome) => {
+      const database = new AnalyticsDatabase();
+      const handler = createChatHandler({
+        db: database.d1,
+        groqApiKey: 'test',
+        isAllowed: async () => true,
+        retrieveKnowledge: async () =>
+          outcome === 'answered'
+            ? [
+                {
+                  id: 'source',
+                  title: 'Guide',
+                  href: '/en/contact',
+                  content: 'Verified guide',
+                  tags: [],
+                  locale: 'en' as const,
+                  requestedLocale: 'en' as const,
+                  missing: false,
+                  outdated: false,
+                },
+              ]
+            : [],
+        fetcher: async () =>
+          Response.json({
+            choices: [{ message: { content: 'Verified answer' } }],
+          }),
+        analyticsHashPepper: TEST_ANALYTICS_PEPPER,
+      });
+      const response = await handler(
+        new Request('https://unirise.tw/api/chat', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://unirise.tw',
+            'CF-Connecting-IP': '203.0.113.12',
+          },
+          body: JSON.stringify({
+            locale: 'en',
+            message: 'Guide for buyer@example.com',
+          }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(
+        database.events.map((row) => [row.name, row.locale, row.path]),
+      ).toEqual([
+        ['chat_question', 'en', '/en/chat'],
+        [`chat_${outcome}`, 'en', '/en/chat'],
+      ]);
+      expect(database.questions[0]).toMatchObject({ locale: 'en', outcome });
+      expect(JSON.stringify(database.questions)).not.toContain(
+        'buyer@example.com',
+      );
+      expect(JSON.stringify(database.events)).not.toContain('203.0.113.12');
+    },
+  );
   it('rejects an oversized chunked chat body before rate-limit or retrieval work', async () => {
     const database = new AnalyticsDatabase();
     const isAllowed = vi.fn(async () => true);
@@ -895,6 +1095,7 @@ describe('chat analytics integration', () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          locale: 'zh-TW',
           message: '我的信箱是 buyer@example.com，公司地址在哪裡？',
         }),
       }),

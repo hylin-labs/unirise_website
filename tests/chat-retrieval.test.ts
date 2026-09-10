@@ -58,7 +58,7 @@ describe('chat retrieval', () => {
       new Request('https://unirise.example/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'X-ray' }),
+        body: JSON.stringify({ locale: 'zh-TW', message: 'X-ray' }),
       }),
     );
 
@@ -83,7 +83,7 @@ describe('chat retrieval', () => {
       new Request('https://unirise.example/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'X-ray' }),
+        body: JSON.stringify({ locale: 'zh-TW', message: 'X-ray' }),
       }),
     );
 
@@ -109,7 +109,7 @@ describe('chat retrieval', () => {
       new Request('https://unirise.example/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'X-ray' }),
+        body: JSON.stringify({ locale: 'zh-TW', message: 'X-ray' }),
       }),
     );
 

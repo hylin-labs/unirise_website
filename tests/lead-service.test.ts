@@ -156,6 +156,36 @@ function captureMailer(deliveries: LeadNotification[]) {
 }
 
 describe('chat lead service', () => {
+  it('derives English lead and event locale from the normalized source path', async () => {
+    const database = new LeadDatabase();
+    await createChatLead(
+      database.d1,
+      {
+        requestType: 'quote',
+        name: 'Lin',
+        email: 'buyer@example.com',
+        message: 'Please provide a quote.',
+      },
+      {
+        sourcePath: '/en/catalog?email=private@example.com#secret',
+        visitorIdentifier: 'visitor-en',
+      },
+      async () => undefined,
+      TEST_ANALYTICS_PEPPER,
+    );
+    expect(database.leads[0]).toMatchObject({
+      locale: 'en',
+      source_path: '/en/catalog',
+    });
+    expect(database.events[0]).toMatchObject({
+      locale: 'en',
+      path: '/en/catalog',
+      metadata_json: '{"requestType":"quote"}',
+    });
+    expect(JSON.stringify(database.events)).not.toContain(
+      'private@example.com',
+    );
+  });
   it('uses keyed, domain-separated hashes for lead records and edge throttles', async () => {
     const database = new LeadDatabase();
 
@@ -368,6 +398,38 @@ describe('chat lead route protection', () => {
     message: 'Please provide a quote.',
     sourcePath: '/',
   };
+
+  it.each(['zh-TW', 'en', 'invalid'])(
+    'derives locale from the English source path despite submitted locale %s',
+    async (locale) => {
+      const database = new LeadDatabase();
+      const handler = createLeadsHandler({
+        db: database.d1,
+        mailer: async () => undefined,
+        analyticsHashPepper: TEST_ANALYTICS_PEPPER,
+      });
+      const response = await handler(
+        leadRequest(
+          'https://unirise.tw',
+          JSON.stringify({
+            ...validBody,
+            locale,
+            sourcePath: '/en/contact?private=secret',
+          }),
+        ),
+      );
+      expect(response.status).toBe(201);
+      expect(database.leads[0]).toMatchObject({
+        locale: 'en',
+        source_path: '/en/contact',
+      });
+      expect(database.events[0]).toMatchObject({
+        locale: 'en',
+        path: '/en/contact',
+      });
+      expect(JSON.stringify(database.events)).not.toContain('secret');
+    },
+  );
 
   function leadRequest(
     origin?: string,

@@ -1,6 +1,8 @@
 import { uniriseSchema, visitorStatsSchema } from '../db/schema';
 import { hashVisitorIdentifier } from './analytics';
 import { publicAnalyticsPath } from './public-analytics-path';
+import { localeFromPathname } from './localized-route';
+import type { Locale } from './locales';
 
 const LEAD_LIMIT_PER_HOUR = 3;
 const EDGE_LIMIT_PER_MINUTE = 10;
@@ -19,7 +21,10 @@ export type LeadInput = {
 export type LeadContext = {
   sourcePath: string;
   visitorIdentifier: string;
+  locale: Locale;
 };
+
+type LeadContextInput = Omit<LeadContext, 'locale'>;
 
 export type LeadNotification = {
   to: string;
@@ -85,7 +90,7 @@ function normalizeLead(input: LeadInput): NormalizedLead {
   };
 }
 
-function normalizeContext(context: LeadContext) {
+export function normalizeLeadContext(context: LeadContextInput): LeadContext {
   const submittedPath = requiredText(context.sourcePath, 500);
   if (!submittedPath.startsWith('/') || submittedPath.startsWith('//'))
     throw new Error('invalid_lead');
@@ -93,6 +98,7 @@ function normalizeContext(context: LeadContext) {
   const sourcePath = publicAnalyticsPath(url.pathname, '') ?? '/';
   return {
     sourcePath,
+    locale: localeFromPathname(sourcePath)!,
     visitorIdentifier: requiredText(context.visitorIdentifier, 500),
   };
 }
@@ -158,12 +164,13 @@ function notificationFor(lead: NormalizedLead): LeadNotification {
 export async function createChatLead(
   db: D1Database,
   input: LeadInput,
-  context: LeadContext,
+  context: LeadContextInput,
   mailer: LeadMailer,
   hashPepper: string,
 ): Promise<{ id: string; emailDelivered: boolean }> {
   const lead = normalizeLead(input);
-  const { sourcePath, visitorIdentifier } = normalizeContext(context);
+  const { sourcePath, visitorIdentifier, locale } =
+    normalizeLeadContext(context);
   const visitorHash = await hashVisitorIdentifier(
     visitorIdentifier,
     hashPepper,
@@ -177,9 +184,9 @@ export async function createChatLead(
     .prepare(
       `INSERT INTO ${uniriseSchema.chatLeads} (
         id, request_type, name, email, company, phone, topic, message,
-        source_path, visitor_hash, status, email_delivered, created_at, updated_at
+        source_path, visitor_hash, status, email_delivered, created_at, updated_at, locale
       )
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       WHERE (
         SELECT COUNT(*) FROM ${uniriseSchema.chatLeads}
         WHERE visitor_hash = ? AND created_at >= ?
@@ -200,6 +207,7 @@ export async function createChatLead(
       0,
       createdAt,
       createdAt,
+      locale,
       visitorHash,
       cutoff,
       LEAD_LIMIT_PER_HOUR,
@@ -207,8 +215,8 @@ export async function createChatLead(
   const eventStatement = db
     .prepare(
       `INSERT INTO ${uniriseSchema.siteEvents}
-        (id, visitor_hash, name, path, metadata_json, occurred_at)
-      SELECT ?, ?, ?, ?, ?, ?
+        (id, visitor_hash, name, path, metadata_json, occurred_at, locale)
+      SELECT ?, ?, ?, ?, ?, ?, ?
       WHERE EXISTS (
         SELECT 1 FROM ${uniriseSchema.chatLeads} WHERE id = ?
       )`,
@@ -220,6 +228,7 @@ export async function createChatLead(
       sourcePath,
       JSON.stringify({ requestType: lead.requestType }),
       createdAt,
+      locale,
       id,
     );
   const [inserted] = await db.batch([leadStatement, eventStatement]);

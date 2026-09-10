@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import {
   createChatLead,
   isLeadSubmissionRequestAllowed,
+  normalizeLeadContext,
   type LeadInput,
   type LeadMailer,
 } from '../../../lib/lead-service';
@@ -67,11 +68,11 @@ export function createLeadsHandler({
       const result = await createChatLead(
         db,
         body as LeadInput,
-        {
+        normalizeLeadContext({
           sourcePath:
             typeof body.sourcePath === 'string' ? body.sourcePath : '',
           visitorIdentifier,
-        },
+        }),
         mailer,
         analyticsHashPepper,
       );

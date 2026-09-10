@@ -196,9 +196,7 @@ export function OriginalHeader({
           <div
             className={`original-nav-item ${mobilePanel === 'downloads' ? 'mobile-open' : ''}`}
           >
-            <a href={localizedPath(locale, '/downloads')}>
-              {nav[3]}
-            </a>
+            <a href={localizedPath(locale, '/downloads')}>{nav[3]}</a>
             <button
               className="original-submenu-toggle"
               type="button"
@@ -336,7 +334,7 @@ export function OriginalFooter({
         <div className="original-copyright">
           <div className="original-container">
             {chrome.text.copyright}
-            <VisitorCounter />
+            <VisitorCounter locale={locale} />
           </div>
         </div>
       </footer>

@@ -1,4 +1,10 @@
 import { uniriseSchema, visitorStatsSchema } from '../db/schema';
+import {
+  LOCALES,
+  parseLocale,
+  parseLocaleOrDefault,
+  type Locale,
+} from './locales';
 
 export type AnalyticsEventName =
   | 'page_view'
@@ -25,6 +31,14 @@ const CHAT_QUESTION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 export type DashboardSnapshot = {
   metrics: DashboardMetrics;
+  byLocale: Record<
+    Locale,
+    {
+      metrics: DashboardMetrics;
+      topPages: Array<{ path: string; count: number }>;
+      topDownloads: Array<{ path: string; count: number }>;
+    }
+  >;
   translations: {
     needsReview: number;
     published: number;
@@ -32,6 +46,7 @@ export type DashboardSnapshot = {
     outdated: number;
   };
   unansweredQuestions: Array<{
+    locale: Locale;
     id: string;
     question: string;
     sourceIds: string[];
@@ -40,6 +55,7 @@ export type DashboardSnapshot = {
   topPages: Array<{ path: string; count: number }>;
   topDownloads: Array<{ path: string; count: number }>;
   leads: Array<{
+    locale: Locale;
     id: string;
     requestType: string;
     name: string;
@@ -233,6 +249,7 @@ function safeMetadata(
 export async function recordEvent(
   db: D1Database,
   event: {
+    locale: Locale;
     visitorHash: string | null;
     name: AnalyticsEventName;
     path: string;
@@ -241,13 +258,15 @@ export async function recordEvent(
   },
 ) {
   if (!EVENT_NAMES.has(event.name)) throw new Error('invalid_event');
+  const locale = parseLocale(event.locale);
+  if (!locale) throw new Error('invalid_event');
   const visitorHash = event.visitorHash?.trim() || null;
   const occurredAt = (event.occurredAt ?? new Date()).toISOString();
   await db
     .prepare(
       `INSERT INTO ${uniriseSchema.siteEvents}
-        (id, visitor_hash, name, path, metadata_json, occurred_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+        (id, visitor_hash, name, path, metadata_json, occurred_at, locale)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       crypto.randomUUID(),
@@ -256,6 +275,7 @@ export async function recordEvent(
       safePath(event.path),
       JSON.stringify(safeMetadata(event.name, event.metadata)),
       occurredAt,
+      locale,
     )
     .run();
 }
@@ -313,6 +333,7 @@ function safeSourceIds(sourceIds: string[]) {
 export async function recordChatOutcome(
   db: D1Database,
   input: {
+    locale: Locale;
     question: string;
     outcome: 'answered' | 'unanswered';
     sourceIds: string[];
@@ -320,14 +341,16 @@ export async function recordChatOutcome(
   },
 ) {
   const now = input.createdAt ?? new Date();
+  const locale = parseLocale(input.locale);
+  if (!locale) throw new Error('invalid_locale');
   if (containsHighlySensitiveText(input.question)) return;
   const question = sanitizeQuestion(input.question);
   if (!question) return;
   await db
     .prepare(
       `INSERT INTO ${uniriseSchema.chatQuestions}
-          (id, question, outcome, source_ids_json, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
+          (id, question, outcome, source_ids_json, created_at, locale)
+         VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       crypto.randomUUID(),
@@ -335,6 +358,7 @@ export async function recordChatOutcome(
       input.outcome,
       JSON.stringify(safeSourceIds(input.sourceIds)),
       now.toISOString(),
+      locale,
     )
     .run();
 }
@@ -353,7 +377,10 @@ export async function pruneExpiredChatQuestions(
 export async function getDashboardMetrics(
   db: D1Database,
   range: DashboardRange,
+  locale?: Locale,
 ): Promise<DashboardMetrics> {
+  if (locale !== undefined && !parseLocale(locale))
+    throw new Error('invalid_locale');
   const bounds = dashboardBounds(range);
   const row = await db
     .prepare(
@@ -366,9 +393,9 @@ export async function getDashboardMetrics(
          SUM(CASE WHEN name = 'chat_unanswered' THEN 1 ELSE 0 END) AS unanswered_questions,
          SUM(CASE WHEN name = 'inquiry_submitted' THEN 1 ELSE 0 END) AS leads
        FROM ${uniriseSchema.siteEvents}
-       WHERE occurred_at >= ? AND occurred_at < ?`,
+       WHERE occurred_at >= ? AND occurred_at < ?${locale ? ' AND locale = ?' : ''}`,
     )
-    .bind(bounds.from, bounds.to)
+    .bind(bounds.from, bounds.to, ...(locale ? [locale] : []))
     .first<MetricRow>();
   const uniqueVisitors = asNumber(row?.unique_visitors);
   const chatQuestions = asNumber(row?.chat_questions);
@@ -415,6 +442,26 @@ function optionalString(value: unknown) {
   return typeof value === 'string' ? value : null;
 }
 
+async function localeRanking(
+  db: D1Database,
+  bounds: DashboardRange,
+  locale: Locale,
+  name: 'page_view' | 'download_click',
+) {
+  const rows = await db
+    .prepare(
+      `SELECT path, COUNT(*) AS count FROM ${uniriseSchema.siteEvents}
+     WHERE occurred_at >= ? AND occurred_at < ? AND name = ? AND locale = ?
+     GROUP BY path ORDER BY count DESC LIMIT 20`,
+    )
+    .bind(bounds.from, bounds.to, name, locale)
+    .all<{ path: string; count: number }>();
+  return rows.results.map((row) => ({
+    path: row.path,
+    count: asNumber(row.count),
+  }));
+}
+
 export async function getDashboardSnapshot(
   db: D1Database,
   range: DashboardRange,
@@ -433,11 +480,12 @@ export async function getDashboardSnapshot(
     downloads,
     knowledge,
     translations,
+    localeSnapshots,
   ] = await Promise.all([
     getDashboardMetrics(db, range),
     db
       .prepare(
-        `SELECT id, question, outcome, source_ids_json, created_at
+        `SELECT id, question, outcome, source_ids_json, created_at, locale
            FROM ${uniriseSchema.chatQuestions}
            WHERE created_at >= ? AND created_at < ? AND outcome = 'unanswered'
            ORDER BY created_at DESC LIMIT 100`,
@@ -451,6 +499,7 @@ export async function getDashboardSnapshot(
         question: string;
         source_ids_json: string;
         created_at: string;
+        locale: Locale;
       }>(),
     db
       .prepare(
@@ -471,7 +520,7 @@ export async function getDashboardSnapshot(
     db
       .prepare(
         `SELECT id, request_type, name, email, company, phone, topic, message,
-                  source_path, status, email_delivered, created_at
+                  source_path, status, email_delivered, created_at, locale
            FROM ${uniriseSchema.chatLeads}
            WHERE created_at >= ? AND created_at < ?
            ORDER BY created_at DESC LIMIT 100`,
@@ -509,10 +558,23 @@ export async function getDashboardSnapshot(
         draft: number;
         outdated: number;
       }>(),
+    Promise.all(
+      LOCALES.map(async (locale) => {
+        const [metrics, topPages, topDownloads] = await Promise.all([
+          getDashboardMetrics(db, range, locale),
+          localeRanking(db, bounds, locale, 'page_view'),
+          localeRanking(db, bounds, locale, 'download_click'),
+        ]);
+        return [locale, { metrics, topPages, topDownloads }] as const;
+      }),
+    ),
   ]);
 
   return {
     metrics,
+    byLocale: Object.fromEntries(
+      localeSnapshots,
+    ) as DashboardSnapshot['byLocale'],
     translations: {
       needsReview: asNumber(translations?.needs_review),
       published: asNumber(translations?.published),
@@ -520,6 +582,7 @@ export async function getDashboardSnapshot(
       outdated: asNumber(translations?.outdated),
     },
     unansweredQuestions: gaps.results.map((row) => ({
+      locale: parseLocaleOrDefault(row.locale),
       id: row.id,
       question: sanitizeQuestion(row.question),
       sourceIds: parseSourceIds(row.source_ids_json),
@@ -534,6 +597,7 @@ export async function getDashboardSnapshot(
       count: asNumber(row.count),
     })),
     leads: leads.results.map((row) => ({
+      locale: parseLocaleOrDefault(row.locale),
       id: String(row.id),
       requestType: String(row.request_type),
       name: String(row.name),

@@ -275,6 +275,7 @@ class ReleaseDatabase {
     }
     if (query.startsWith('insert into chat_knowledge')) {
       const row = insertRow(sql, values);
+      row.source_version ??= 1;
       if (this.knowledge.some((item) => item.id === row.id)) return 0;
       this.knowledge.push(row);
       return 1;
@@ -413,7 +414,7 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
       const pageView = await analytics(
         jsonRequest(
           'https://unirise.example/api/analytics',
-          { name: 'page_view', path: '/' },
+          { locale: 'zh-TW', name: 'page_view', path: '/' },
           `unirise_visitor=${visitor}`,
         ),
       );
@@ -435,6 +436,7 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
     });
     const chatResponse = await chat(
       jsonRequest('https://unirise.example/api/chat', {
+        locale: 'zh-TW',
         message: '請問 X-ray 檢測方案？',
       }),
     );

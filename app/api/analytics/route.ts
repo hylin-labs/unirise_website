@@ -9,6 +9,11 @@ import {
   type AnalyticsEventName,
 } from '../../../lib/analytics';
 import { readCookie } from '../../../lib/visitor-stats';
+import { parseLocale, type Locale } from '../../../lib/locales';
+import {
+  localeFromPathname,
+  publicPathWithoutLocale,
+} from '../../../lib/localized-route';
 import {
   RequestTooLargeError,
   readLimitedRequestBody,
@@ -43,10 +48,13 @@ function localHostname(hostname: string) {
 function validPublicEvent(value: unknown): {
   name: Extract<AnalyticsEventName, 'page_view' | 'download_click'>;
   path: string;
+  locale: Locale;
   metadata?: Record<string, unknown>;
 } | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const payload = value as Record<string, unknown>;
+  const locale = parseLocale(payload.locale);
+  if (!locale) return null;
   if (payload.name !== 'page_view' && payload.name !== 'download_click') {
     return null;
   }
@@ -59,6 +67,7 @@ function validPublicEvent(value: unknown): {
     return null;
   }
   return {
+    locale,
     name: payload.name,
     path: payload.path,
     metadata:
@@ -73,7 +82,14 @@ function validPublicEvent(value: unknown): {
 function canonicalPublicEventPath(event: ReturnType<typeof validPublicEvent>) {
   if (!event) return null;
   const url = new URL(event.path, 'https://unirise.invalid');
-  if (url.hash) return null;
+  if (
+    url.hash ||
+    url.origin !== 'https://unirise.invalid' ||
+    localeFromPathname(url.pathname) !== event.locale
+  )
+    return null;
+  const publicPath = publicPathWithoutLocale(url.pathname);
+  if (!publicPath) return null;
   const allowedKeys: Record<string, string[]> = {
     '/': [],
     '/news': ['id'],
@@ -82,7 +98,7 @@ function canonicalPublicEventPath(event: ReturnType<typeof validPublicEvent>) {
     '/inquiry': [],
     '/contact': [],
   };
-  const keys = allowedKeys[url.pathname];
+  const keys = allowedKeys[publicPath];
   if (
     !keys ||
     [...url.searchParams.keys()].some((key) => !keys.includes(key)) ||
@@ -96,12 +112,12 @@ function canonicalPublicEventPath(event: ReturnType<typeof validPublicEvent>) {
   if (id && !/^\d{1,12}$/.test(id)) return null;
   const type = url.searchParams.get('type');
   if (type && type !== 'brand' && type !== 'industry') return null;
-  if (url.pathname === '/catalog') {
+  if (publicPath === '/catalog') {
     const keyCount = [...url.searchParams.keys()].length;
     if (keyCount !== 0 && (!type || !id || keyCount !== 2)) return null;
   }
   if (event.name === 'download_click') {
-    if (url.pathname !== '/downloads' || !id) return null;
+    if (publicPath !== '/downloads' || !id) return null;
     if (event.metadata?.downloadId !== id) return null;
   }
   return `${url.pathname}${url.search}`;

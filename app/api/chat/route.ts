@@ -6,6 +6,7 @@ import {
 } from '../../../lib/analytics';
 import { isChatRequestAllowed } from '../../../lib/chat-rate-limit';
 import { retrieveSiteKnowledge } from '../../../lib/site-knowledge';
+import { parseLocale, type Locale } from '../../../lib/locales';
 import {
   RequestTooLargeError,
   readLimitedRequestBody,
@@ -14,10 +15,22 @@ import {
 const MAX_MESSAGE_LENGTH = 700;
 const MAX_BODY_BYTES = 12_000;
 const GROQ_MODEL = 'openai/gpt-oss-20b';
-const systemPrompt = `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
+const systemPrompts: Record<Locale, string> = {
+  'zh-TW': `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
 只能根據「網站檢索結果」回答，不能使用外部知識或自行推論。回答時只陳述檢索結果明確記載的內容；不可補充任何產品能力、應用情境、規格、售價、交期、保固、認證、庫存或技術承諾。若檢索結果不足，請直接說明目前網站沒有提供該細節，並建議訪客使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。
-不可要求或處理身分證、信用卡、帳密、完整地址或其他敏感個資。`;
+不可要求或處理身分證、信用卡、帳密、完整地址或其他敏感個資。`,
+  en: `You are the beta customer support assistant for the Unirise website. Respond only in English, briefly, professionally, and kindly.
+
+Answer only from the website retrieval results. Do not use external knowledge or make inferences. State only facts explicitly present in the results. Do not add product capabilities, applications, specifications, prices, lead times, warranties, certifications, stock availability, or technical commitments. If the results are insufficient, explain that the website does not provide that detail and suggest the Inquiry form or contacting Unirise at 06-3319283 / info-unirise@unirise.tw. Use English site links beginning with /en for public pages.
+Do not request or process identity numbers, credit cards, credentials, full addresses, or other sensitive personal information.`,
+};
+
+const fallbackAnswers: Record<Locale, string> = {
+  'zh-TW':
+    '目前網站沒有提供這項資訊的細節。建議您使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。',
+  en: 'The website does not currently provide details on this topic. Please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.',
+};
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -68,17 +81,23 @@ export function createChatHandler({
     if (origin && origin !== new URL(request.url).origin)
       return json('origin_not_allowed', 403);
 
-    let body: { message?: unknown; history?: unknown };
+    let body: { message?: unknown; history?: unknown; locale?: unknown };
     try {
-      body = JSON.parse(
+      const value: unknown = JSON.parse(
         await readLimitedRequestBody(request, MAX_BODY_BYTES),
-      ) as { message?: unknown; history?: unknown };
+      );
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        return json('invalid_request', 400);
+      body = value;
     } catch (error) {
       if (error instanceof RequestTooLargeError)
         return json('request_too_large', 413);
       return json('invalid_request', 400);
     }
 
+    const locale = parseLocale(body.locale);
+    if (!locale) return json('invalid_locale', 400);
+    const chatPath = locale === 'en' ? '/en/chat' : '/chat';
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     if (!message || message.length > MAX_MESSAGE_LENGTH)
       return json('invalid_message', 400);
@@ -110,13 +129,14 @@ export function createChatHandler({
           await recordEvent(db, {
             visitorHash,
             name: 'chat_question',
-            path: '/chat',
+            path: chatPath,
+            locale,
           });
         } catch {
           // Analytics must never prevent a visitor from using chat.
         }
       }
-      sources = await retrieveKnowledge(db, message);
+      sources = await retrieveKnowledge(db, locale, message);
     } catch {
       return json('chat_unavailable', 503);
     }
@@ -127,9 +147,11 @@ export function createChatHandler({
             recordEvent(db, {
               visitorHash,
               name: 'chat_unanswered',
-              path: '/chat',
+              path: chatPath,
+              locale,
             }),
             recordChatOutcome(db, {
+              locale,
               question: message,
               outcome: 'unanswered',
               sourceIds: [],
@@ -141,15 +163,14 @@ export function createChatHandler({
       }
       return Response.json(
         {
-          answer:
-            '目前網站沒有提供這項資訊的細節。建議您使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。',
+          answer: fallbackAnswers[locale],
           sources: [],
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );
     }
     const websiteContext = sources
-      .map((source) => `【${source.title}】\n${source.content}`)
+      .map((source) => `[${source.title}](${source.href})\n${source.content}`)
       .join('\n\n');
 
     try {
@@ -168,7 +189,7 @@ export function createChatHandler({
             messages: [
               {
                 role: 'system',
-                content: `${systemPrompt}\n\n網站檢索結果：\n${websiteContext}`,
+                content: `${systemPrompts[locale]}\n\n${locale === 'en' ? 'Website retrieval results:' : '網站檢索結果：'}\n${websiteContext}`,
               },
               ...validHistory(body.history),
               { role: 'user', content: message },
@@ -192,9 +213,11 @@ export function createChatHandler({
             recordEvent(db, {
               visitorHash,
               name: 'chat_answered',
-              path: '/chat',
+              path: chatPath,
+              locale,
             }),
             recordChatOutcome(db, {
+              locale,
               question: message,
               outcome: 'answered',
               sourceIds: sources.map((source) => source.id),

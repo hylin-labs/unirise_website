@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { publicAnalyticsPath } from '../lib/public-analytics-path';
+import {
+  localeFromPathname,
+  publicPathWithoutLocale,
+} from '../lib/localized-route';
+import type { Locale } from '../lib/locales';
 import styles from './visitor-counter.module.css';
 
 type VisitorStats = { total: number; today: number };
 
-const formatter = new Intl.NumberFormat('zh-TW');
-
-export function VisitorCounter() {
+export function VisitorCounter({ locale }: { locale: Locale }) {
+  const formatter = new Intl.NumberFormat(locale);
   const [stats, setStats] = useState<VisitorStats | null>(null);
 
   useEffect(() => {
@@ -21,13 +25,14 @@ export function VisitorCounter() {
       name: 'page_view' | 'download_click',
       path: string,
       metadata?: { downloadId: string },
+      eventLocale: Locale = locale,
     ) =>
       fetch('/api/analytics', {
         method: 'POST',
         cache: 'no-store',
         keepalive: true,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, path, metadata }),
+        body: JSON.stringify({ locale: eventLocale, name, path, metadata }),
       }).catch(() => undefined);
 
     fetch('/api/visitor-stats', { method: 'POST', cache: 'no-store' })
@@ -56,15 +61,24 @@ export function VisitorCounter() {
       if (!anchor) return;
       const url = new URL(anchor.href, window.location.href);
       const downloadId = url.searchParams.get('id');
+      const downloadLocale = localeFromPathname(url.pathname);
+      const downloadPath = publicAnalyticsPath(url.pathname, url.search);
       if (
         url.origin === window.location.origin &&
-        url.pathname === '/downloads' &&
+        publicPathWithoutLocale(url.pathname) === '/downloads' &&
+        downloadLocale &&
+        downloadPath &&
         downloadId &&
         /^\d{1,12}$/.test(downloadId)
       ) {
-        void track('download_click', `/downloads?id=${downloadId}`, {
-          downloadId,
-        });
+        void track(
+          'download_click',
+          downloadPath,
+          {
+            downloadId,
+          },
+          downloadLocale,
+        );
       }
     };
     document.addEventListener('click', captureDownload, true);
@@ -72,18 +86,20 @@ export function VisitorCounter() {
       active = false;
       document.removeEventListener('click', captureDownload, true);
     };
-  }, []);
+  }, [locale]);
 
   if (!stats)
     return (
       <span className={styles.counter} aria-live="polite">
-        訪客統計載入中
+        {locale === 'en' ? 'Loading visitor statistics' : '訪客統計載入中'}
       </span>
     );
 
   return (
     <span className={styles.counter} aria-live="polite">
-      累計訪客 {formatter.format(stats.total)} ｜ 今日訪客{' '}
+      {locale === 'en' ? 'Total visitors' : '累計訪客'}{' '}
+      {formatter.format(stats.total)} ｜{' '}
+      {locale === 'en' ? 'Visitors today' : '今日訪客'}{' '}
       {formatter.format(stats.today)}
     </span>
   );

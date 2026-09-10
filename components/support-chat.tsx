@@ -28,7 +28,7 @@ type SupportChatProps = {
 };
 
 export function SupportChat({
-  locale: _locale,
+  locale,
   labels = initialPublicContent.chrome.text.chat,
 }: SupportChatProps) {
   const [open, setOpen] = useState(false);
@@ -66,7 +66,7 @@ export function SupportChat({
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history: priorMessages }),
+        body: JSON.stringify({ locale, message, history: priorMessages }),
       });
       const payload = (await response.json()) as {
         answer?: string;
@@ -129,6 +129,7 @@ export function SupportChat({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          locale,
           requestType: leadRequestType,
           name: formData.get('name'),
           email: formData.get('email'),
