@@ -54,7 +54,7 @@ export async function processNextTranslationJobItem({
         hasExpiredLease(candidate.leaseExpiresAt)),
   );
   if (!item) return { state: 'idle' };
-  const claimed = await claimTranslationJobItem(db, item.id);
+  const claimed = await claimTranslationJobItem(db, item.id, { actor });
   if (!claimed) return { state: 'idle' };
   const result = {
     itemId: claimed.id,
@@ -71,9 +71,15 @@ export async function processNextTranslationJobItem({
       source.status !== 'published' ||
       source.sourceVersion !== claimed.sourceVersion
     ) {
-      await finishTranslationJobItem(db, claimed.id, claimed.claimToken!, {
-        state: 'skipped',
-      });
+      await finishTranslationJobItem(
+        db,
+        claimed.id,
+        claimed.claimToken!,
+        {
+          state: 'skipped',
+        },
+        actor,
+      );
       return { ...result, state: 'skipped', reason: 'source_outdated' };
     }
     const existing = await getTranslation(
@@ -82,9 +88,15 @@ export async function processNextTranslationJobItem({
       claimed.resourceId,
     );
     if (existing?.origin === 'human') {
-      await finishTranslationJobItem(db, claimed.id, claimed.claimToken!, {
-        state: 'skipped',
-      });
+      await finishTranslationJobItem(
+        db,
+        claimed.id,
+        claimed.claimToken!,
+        {
+          state: 'skipped',
+        },
+        actor,
+      );
       return {
         ...result,
         state: 'skipped',
@@ -103,16 +115,28 @@ export async function processNextTranslationJobItem({
       },
       actor,
     );
-    await finishTranslationJobItem(db, claimed.id, claimed.claimToken!, {
-      state: 'succeeded',
-    });
+    await finishTranslationJobItem(
+      db,
+      claimed.id,
+      claimed.claimToken!,
+      {
+        state: 'succeeded',
+      },
+      actor,
+    );
     return { ...result, state: 'succeeded' };
   } catch (error) {
     const failureReason = safeFailureReason(error);
-    await finishTranslationJobItem(db, claimed.id, claimed.claimToken!, {
-      state: 'failed',
-      failureReason,
-    });
+    await finishTranslationJobItem(
+      db,
+      claimed.id,
+      claimed.claimToken!,
+      {
+        state: 'failed',
+        failureReason,
+      },
+      actor,
+    );
     return { ...result, state: 'failed', failureReason };
   }
 }

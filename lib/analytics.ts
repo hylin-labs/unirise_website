@@ -25,6 +25,12 @@ const CHAT_QUESTION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 export type DashboardSnapshot = {
   metrics: DashboardMetrics;
+  translations: {
+    needsReview: number;
+    published: number;
+    draft: number;
+    outdated: number;
+  };
   unansweredQuestions: Array<{
     id: string;
     question: string;
@@ -426,6 +432,7 @@ export async function getDashboardSnapshot(
     news,
     downloads,
     knowledge,
+    translations,
   ] = await Promise.all([
     getDashboardMetrics(db, range),
     db
@@ -489,10 +496,29 @@ export async function getDashboardSnapshot(
            FROM ${uniriseSchema.chatKnowledge} ORDER BY updated_at DESC`,
       )
       .all<Record<string, unknown>>(),
+    db
+      .prepare(`SELECT
+      SUM(CASE WHEN status = 'needs_review' THEN 1 ELSE 0 END) AS needs_review,
+      SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
+      SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft,
+      SUM(outdated) AS outdated
+      FROM ${uniriseSchema.contentTranslations} WHERE locale = 'en'`)
+      .first<{
+        needs_review: number;
+        published: number;
+        draft: number;
+        outdated: number;
+      }>(),
   ]);
 
   return {
     metrics,
+    translations: {
+      needsReview: asNumber(translations?.needs_review),
+      published: asNumber(translations?.published),
+      draft: asNumber(translations?.draft),
+      outdated: asNumber(translations?.outdated),
+    },
     unansweredQuestions: gaps.results.map((row) => ({
       id: row.id,
       question: sanitizeQuestion(row.question),

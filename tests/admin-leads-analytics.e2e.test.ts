@@ -239,6 +239,8 @@ class ReleaseDatabase {
     ) {
       return [];
     }
+    if (query.includes('from content_translations'))
+      return [{ needs_review: 0, published: 0, draft: 0, outdated: 0 }];
     throw new Error(`Unsupported release-test read SQL: ${sql}`);
   }
 

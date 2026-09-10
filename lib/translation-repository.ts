@@ -5,6 +5,7 @@ import {
   ContentValidationError,
 } from './content-repository';
 import type { Locale } from './locales';
+import type { TranslationResource } from './translation-admin';
 import {
   RESOURCE_TYPES,
   validateResourceReference,
@@ -108,7 +109,7 @@ function audit(
   db: D1Database,
   actor: AdminIdentity,
   action: string,
-  ref: SourceReference,
+  ref: { resourceType: string; resourceId: string },
   detail: object,
   now: string,
 ) {
@@ -311,6 +312,16 @@ export async function getLocalizedContent(
     )
       throw error;
   }
+  return resolveEnglishContent(source, translation, options);
+}
+
+function resolveEnglishContent(
+  source: CanonicalSource,
+  translation: TranslationRecord | null,
+  options: { fallback?: boolean } = {},
+): LocalizedContent | null {
+  if (source.status !== 'published') return null;
+  const locale = 'en';
   if (translation && translation.status !== 'draft') {
     try {
       // Outdated English prose stays public, but changed literal links must not
@@ -347,6 +358,35 @@ export async function getLocalizedContent(
     outdated: translation?.outdated ?? false,
     translation: null,
   };
+}
+
+/** Reads the catalogue once, sharing the same visibility checks as public reads. */
+export async function listTranslationResources(
+  db: D1Database,
+): Promise<TranslationResource[]> {
+  const sources = await enumerateSources(db, { includeDrafts: true });
+  const rows = await db
+    .prepare(`SELECT * FROM ${schema.contentTranslations} WHERE locale = 'en'`)
+    .all<TranslationRow>();
+  const translations = new Map(
+    rows.results.map((row) => [
+      `${row.resource_type}:${row.resource_id}`,
+      translationFromRow(row),
+    ]),
+  );
+  return sources.map((source) => {
+    const translation =
+      translations.get(`${source.resourceType}:${source.resourceId}`) ?? null;
+    const localized = resolveEnglishContent(source, translation, {
+      fallback: false,
+    });
+    return {
+      source,
+      translation,
+      public: localized?.locale === 'en',
+      reviewed: !!translation?.reviewedAt && translation.status === 'published',
+    };
+  });
 }
 
 export async function updateCanonicalSource(
@@ -409,6 +449,7 @@ export type TranslationInput = SourceReference & {
   status: TranslationStatus;
   origin: TranslationOrigin;
   claim?: { itemId: string; token: string };
+  expectedUpdatedAt?: string | null;
 };
 export async function saveTranslation(
   db: D1Database,
@@ -434,9 +475,16 @@ export async function saveTranslation(
     input.resourceType,
     input.resourceId,
   );
+  if (
+    input.expectedUpdatedAt !== undefined &&
+    input.expectedUpdatedAt !== (existing?.updatedAt ?? null)
+  )
+    throw new ContentConflictError();
   if (input.origin === 'ai' && existing?.origin === 'human')
     throw new ContentValidationError('human translation is protected');
-  const now = timestamp();
+  const now = new Date(
+    Math.max(Date.now(), existing ? Date.parse(existing.updatedAt) + 1 : 0),
+  ).toISOString();
   const reviewed = input.origin === 'human' && input.status === 'published';
   if (input.claim) {
     boundedId(input.claim.itemId);
@@ -539,12 +587,30 @@ export async function setTranslationPublication(
   resourceId: string,
   status: TranslationStatus,
   actor: AdminIdentity,
+  options: {
+    expectedUpdatedAt?: string | null;
+    sourceVersion?: number;
+    review?: boolean;
+  } = {},
 ) {
   reference(resourceType, resourceId);
   translationStatus(status);
   const existing = await getTranslation(db, resourceType, resourceId);
   if (!existing) throw new ContentValidationError('translation was not found');
-  const now = timestamp();
+  if (
+    options.expectedUpdatedAt !== undefined &&
+    options.expectedUpdatedAt !== existing.updatedAt
+  )
+    throw new ContentConflictError();
+  const source = await getCanonicalSource(db, resourceType, resourceId);
+  if (
+    options.sourceVersion !== undefined &&
+    source?.sourceVersion !== options.sourceVersion
+  )
+    throw new ContentConflictError();
+  const now = new Date(
+    Math.max(Date.now(), Date.parse(existing.updatedAt) + 1),
+  ).toISOString();
   await commit(
     db,
     db
@@ -564,7 +630,14 @@ export async function setTranslationPublication(
         resourceId,
         existing.sourceVersion,
       ),
-    audit(db, actor, `translation.${status}`, existing, { status }, now),
+    audit(
+      db,
+      actor,
+      options.review ? 'translation.reviewed' : `translation.${status}`,
+      existing,
+      { status },
+      now,
+    ),
     db
       .prepare(`SELECT changes() AS primary_changes, EXISTS (
       SELECT 1 FROM ${schema.contentTranslations}
@@ -594,6 +667,27 @@ function jobFromRow(row: JobRow): TranslationJob {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+export async function listTranslationJobs(
+  db: D1Database,
+  limit = 20,
+  offset = 0,
+): Promise<TranslationJob[]> {
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > 100 ||
+    !Number.isSafeInteger(offset) ||
+    offset < 0
+  )
+    throw new ContentValidationError('invalid pagination');
+  const rows = await db
+    .prepare(
+      `SELECT * FROM ${schema.translationJobs} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+    )
+    .bind(limit, offset)
+    .all<JobRow>();
+  return rows.results.map(jobFromRow);
 }
 export async function getTranslationJob(
   db: D1Database,
@@ -728,6 +822,14 @@ export async function createTranslationJob(
         now,
         now,
       ),
+    audit(
+      db,
+      actor,
+      'translation.batch_started',
+      { resourceType: 'translation_job', resourceId: id },
+      { count: sources.length },
+      now,
+    ),
   ];
   for (const source of sources)
     statements.push(
@@ -763,7 +865,7 @@ async function findItem(db: D1Database, id: string) {
 export async function claimTranslationJobItem(
   db: D1Database,
   id: string,
-  options: { now?: string; leaseSeconds?: number } = {},
+  options: { now?: string; leaseSeconds?: number; actor?: AdminIdentity } = {},
 ): Promise<TranslationJobItem | null> {
   const now = options.now ?? timestamp();
   const seconds = options.leaseSeconds ?? 120;
@@ -786,6 +888,18 @@ export async function claimTranslationJobItem(
     attempts = attempts + 1, state = 'running', claim_token = ?, lease_expires_at = ?, failure_reason = NULL, updated_at = ?
     WHERE id = ? AND (state = 'pending' OR (state = 'running' AND lease_expires_at <= ?))`)
       .bind(now, now, token, expires, now, id, now),
+    ...(options.actor
+      ? [
+          audit(
+            db,
+            options.actor,
+            'translation.item_started',
+            { resourceType: item.resource_type, resourceId: item.resource_id },
+            { jobId: item.job_id, itemId: id },
+            now,
+          ),
+        ]
+      : []),
     refreshJob(db, item.job_id, now),
   ]);
   if (result.meta.changes !== 1) return null;
@@ -801,6 +915,7 @@ export async function finishTranslationJobItem(
     state: Extract<TranslationItemState, 'succeeded' | 'failed' | 'skipped'>;
     failureReason?: string;
   },
+  actor?: AdminIdentity,
 ): Promise<boolean> {
   boundedId(claimToken);
   if (!['succeeded', 'failed', 'skipped'].includes(outcome.state))
@@ -825,6 +940,18 @@ export async function finishTranslationJobItem(
         id,
         claimToken,
       ),
+    ...(actor
+      ? [
+          audit(
+            db,
+            actor,
+            `translation.item_${outcome.state}`,
+            { resourceType: item.resource_type, resourceId: item.resource_id },
+            { jobId: item.job_id, itemId: id, failureReason: failure },
+            now,
+          ),
+        ]
+      : []),
     refreshJob(db, item.job_id, now),
   ]);
   return result.meta.changes === 1;
@@ -833,6 +960,7 @@ export async function finishTranslationJobItem(
 export async function retryTranslationJobItem(
   db: D1Database,
   id: string,
+  actor?: AdminIdentity,
 ): Promise<boolean> {
   const item = await findItem(db, id);
   if (!item) return false;
@@ -843,6 +971,18 @@ export async function retryTranslationJobItem(
         `UPDATE ${schema.translationJobItems} SET state = 'pending', claim_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND state = 'failed'`,
       )
       .bind(now, id),
+    ...(actor
+      ? [
+          audit(
+            db,
+            actor,
+            'translation.item_retried',
+            { resourceType: item.resource_type, resourceId: item.resource_id },
+            { jobId: item.job_id, itemId: id },
+            now,
+          ),
+        ]
+      : []),
     refreshJob(db, item.job_id, now),
   ]);
   return result.meta.changes === 1;

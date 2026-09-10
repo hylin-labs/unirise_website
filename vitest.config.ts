@@ -4,7 +4,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      'next/navigation': fileURLToPath(new URL('./tests/stubs/next-navigation.ts', import.meta.url)),
+      'cloudflare:workers': fileURLToPath(
+        new URL('./tests/stubs/cloudflare-workers.ts', import.meta.url),
+      ),
+      'next/navigation': fileURLToPath(
+        new URL('./tests/stubs/next-navigation.ts', import.meta.url),
+      ),
     },
   },
   test: {

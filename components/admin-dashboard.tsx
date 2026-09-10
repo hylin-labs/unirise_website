@@ -14,8 +14,9 @@ import {
 } from '../lib/admin-content';
 import type { DashboardSnapshot } from '../lib/analytics';
 import styles from './admin-dashboard.module.css';
+import { TranslationManager } from './translation-manager';
 
-type View = 'overview' | 'content' | 'leads' | 'gaps';
+type View = 'overview' | 'content' | 'leads' | 'gaps' | 'translations';
 
 const metricCards: Array<{
   key: keyof DashboardSnapshot['metrics'];
@@ -207,6 +208,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
               ['content', '內容管理'],
               ['leads', '客戶詢問'],
               ['gaps', '聊天缺口'],
+              ...(identity.role === 'admin'
+                ? [['translations', '英文翻譯']]
+                : []),
             ] as Array<[View, string]>
           ).map(([id, label]) => (
             <button
@@ -216,6 +220,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
               key={id}
             >
               {label}
+              {id === 'translations' && snapshot?.translations?.needsReview
+                ? `（${snapshot.translations.needsReview}）`
+                : ''}
             </button>
           ))}
         </nav>
@@ -239,10 +246,18 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                   ? '內容管理'
                   : view === 'leads'
                     ? '客戶詢問'
-                    : '聊天知識缺口'}
+                    : view === 'translations'
+                      ? '英文翻譯管理'
+                      : '聊天知識缺口'}
             </h1>
           </div>
-          <div className={styles.dateFilters}>
+          <div
+            className={
+              view === 'translations'
+                ? styles.hiddenFilters
+                : styles.dateFilters
+            }
+          >
             <label>
               起始日期
               <input
@@ -333,6 +348,10 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
               </article>
             </div>
           </>
+        ) : null}
+
+        {view === 'translations' && identity.role === 'admin' ? (
+          <TranslationManager />
         ) : null}
 
         {!loading && snapshot && view === 'content' ? (

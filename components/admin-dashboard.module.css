@@ -606,3 +606,6 @@
     padding: 32px 24px;
   }
 }
+.hiddenFilters {
+  display: none;
+}
