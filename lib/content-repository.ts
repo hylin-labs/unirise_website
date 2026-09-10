@@ -2,7 +2,7 @@ import { uniriseSchema } from '../db/schema';
 import type { AdminIdentity } from './admin-auth';
 import type { Locale } from './locales';
 import { localizedPath } from './localized-route';
-import { getLocalizedContent } from './translation-repository';
+import { getLocalizedContent, getTranslation } from './translation-repository';
 
 export type ContentStatus = 'draft' | 'published';
 
@@ -583,17 +583,52 @@ async function localizeKnowledge(
   const localized = await getLocalizedContent(db, 'knowledge', source.id, locale, {
     fallback,
   });
-  if (!localized?.payload || localized.payload.kind !== 'knowledge') return null;
+  let payload = localized?.payload;
+  let resolvedLocale = localized?.locale;
+  let missing = localized?.missing;
+  let outdated = localized?.outdated;
+
+  // The generic resolver safely falls back when an immutable literal differs
+  // from the canonical source. Knowledge can retain its public, outdated prose
+  // because the link is always replaced with the current canonical destination.
+  if (
+    locale === 'en' &&
+    !fallback &&
+    localized?.missing &&
+    localized.source
+  ) {
+    const translation = await getTranslation(db, 'knowledge', source.id);
+    if (
+      translation?.status !== 'draft' &&
+      translation?.payload.kind === 'knowledge' &&
+      (translation.outdated ||
+        translation.sourceVersion !== localized.source.sourceVersion)
+    ) {
+      payload = translation.payload;
+      resolvedLocale = 'en';
+      missing = false;
+      outdated = true;
+    }
+  }
+  if (
+    !localized ||
+    !payload ||
+    payload.kind !== 'knowledge' ||
+    !resolvedLocale ||
+    missing === undefined ||
+    outdated === undefined
+  )
+    return null;
   return {
     id: source.id,
-    title: localized.payload.text.title,
-    href: localizedKnowledgeHref(locale, localized.payload.literals.href),
-    content: localized.payload.text.body,
-    tags: localized.payload.text.tags,
+    title: payload.text.title,
+    href: localizedKnowledgeHref(locale, source.href),
+    content: payload.text.body,
+    tags: payload.text.tags,
     requestedLocale: localized.requestedLocale,
-    locale: localized.locale,
-    missing: localized.missing,
-    outdated: localized.outdated,
+    locale: resolvedLocale,
+    missing,
+    outdated,
   };
 }
 

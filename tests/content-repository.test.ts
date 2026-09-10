@@ -842,7 +842,7 @@ describe('managed content repository', () => {
     ]);
   });
 
-  it('uses English-only knowledge and locale-prefixed source links without rewriting human translations', async () => {
+  it('uses English-only knowledge with the current canonical link without rewriting human translations', async () => {
     const database = new ContentDatabase();
     await saveKnowledge(
       database.d1,
@@ -860,6 +860,18 @@ describe('managed content repository', () => {
       database.d1,
       'english-knowledge',
       'published',
+      admin,
+    );
+    await saveKnowledge(
+      database.d1,
+      {
+        id: 'english-knowledge',
+        title: '更新後的中文知識',
+        href: '/contact?from=updated#support',
+        body: '更新後的中文檢測資訊',
+        tags: ['檢測'],
+        status: 'published',
+      },
       admin,
     );
     const translation = translationFixture(
@@ -883,8 +895,8 @@ describe('managed content repository', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         id: 'english-knowledge',
-        title: '中文知識',
-        href: '/catalog?type=brand&id=2',
+        title: '更新後的中文知識',
+        href: '/contact?from=updated#support',
       }),
     ]);
     await expect(
@@ -893,7 +905,7 @@ describe('managed content repository', () => {
       expect.objectContaining({
         id: 'english-knowledge',
         title: 'Inspection knowledge',
-        href: '/en/catalog?type=brand&id=2',
+        href: '/en/contact?from=updated#support',
         locale: 'en',
         missing: false,
         outdated: true,
@@ -905,7 +917,7 @@ describe('managed content repository', () => {
       expect.objectContaining({
         id: 'english-knowledge',
         title: 'Inspection knowledge',
-        href: '/en/catalog?type=brand&id=2',
+        href: '/en/contact?from=updated#support',
       }),
     ]);
     await expect(
