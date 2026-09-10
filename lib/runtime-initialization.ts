@@ -5,7 +5,7 @@ import { seedLegacyContent } from './seed-content';
 // binding or isolate is safe; this cache only avoids duplicate work in one.
 const initialized = new WeakMap<object, Promise<void>>();
 
-export function ensureInitialContent(db: D1Database) {
+export function ensureInitialContent(db: D1Database): Promise<void> {
   const cached = initialized.get(db);
   if (cached) return cached;
 

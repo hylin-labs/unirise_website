@@ -16,6 +16,10 @@ export const uniriseSchema = {
   chatLeads: 'chat_leads',
   siteEvents: 'site_events',
   chatQuestions: 'chat_question_log',
+  publicContent: 'public_content',
+  contentTranslations: 'content_translations',
+  translationJobs: 'translation_jobs',
+  translationJobItems: 'translation_job_items',
 } as const;
 
 export type VisitorStats = {

@@ -1,4 +1,5 @@
 import { uniriseSchema } from '../db/schema';
+import { initialPublicContent, PUBLIC_CONTENT_IDS } from './public-content';
 import {
   legacyDownloads,
   legacyKnowledge,
@@ -7,6 +8,15 @@ import {
 
 export async function seedLegacyContent(db: D1Database): Promise<void> {
   const publishedAt = new Date().toISOString();
+
+  for (const id of PUBLIC_CONTENT_IDS) {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO ${uniriseSchema.publicContent} (id, payload_json, source_version, status) VALUES (?, ?, ?, ?)`,
+      )
+      .bind(id, JSON.stringify(initialPublicContent[id]), 1, 'published')
+      .run();
+  }
 
   await db
     .prepare(
