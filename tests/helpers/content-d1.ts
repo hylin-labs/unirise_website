@@ -86,6 +86,12 @@ export class ContentDatabase {
     return [...(this.tables.get(table) ?? [])];
   }
 
+  seed(table: string, row: Row) {
+    const rows = this.tables.get(table) ?? [];
+    rows.push({ ...row });
+    this.tables.set(table, rows);
+  }
+
   read(sql: string, values: unknown[]) {
     const query = normalized(sql);
     if (query === 'select changes() as primary_changes') {
@@ -99,11 +105,13 @@ export class ContentDatabase {
     if (where) {
       let valueIndex = 0;
       for (const clause of where.split(/\s+and\s+/)) {
-        const match = clause.match(/^(\w+)\s*=\s*\?$/);
-        if (!match) throw new Error(`Unsupported WHERE clause: ${clause}`);
-        const expected = values[valueIndex];
-        valueIndex += 1;
-        rows = rows.filter((row) => row[match[1]] === expected);
+        const placeholder = clause.match(/^(\w+)\s*=\s*\?$/);
+        const literal = clause.match(/^(\w+)\s*=\s*'([^']+)'$/);
+        if (!placeholder && !literal)
+          throw new Error(`Unsupported WHERE clause: ${clause}`);
+        const column = placeholder?.[1] ?? literal![1];
+        const expected = placeholder ? values[valueIndex++] : literal![2];
+        rows = rows.filter((row) => row[column] === expected);
       }
     }
     if (query.includes('order by published_at desc')) {
@@ -153,6 +161,13 @@ export class ContentDatabase {
       const row = Object.fromEntries(
         columns.map((column, index) => [column, values[index]]),
       );
+      if (
+        ['managed_news', 'managed_downloads', 'chat_knowledge'].includes(
+          insert[1],
+        ) &&
+        row.source_version === undefined
+      )
+        row.source_version = 1;
       const rows = this.tables.get(insert[1]) ?? [];
       const existingIndex = rows.findIndex((item) => item.id === row.id);
       if (existingIndex >= 0 && query.includes('on conflict(id) do nothing')) {

@@ -9,8 +9,12 @@ import {
   ContentConflictError,
   ContentValidationError,
   findPublishedNewsByLegacyId,
+  findPublishedNewsByLegacyIdForLocale,
   listPublishedDownloads,
+  listPublishedDownloadsForLocale,
+  listPublishedNewsForLocale,
   retrievePublishedKnowledge,
+  retrievePublishedKnowledgeForLocale,
   saveDownload,
   saveKnowledge,
   saveNews,
@@ -18,6 +22,7 @@ import {
   setKnowledgePublication,
   setNewsPublication,
 } from '../lib/content-repository';
+import { retrieveSiteKnowledge } from '../lib/site-knowledge';
 import { createDownloadsAdminHandler } from '../app/api/admin/downloads/route';
 import { createKnowledgeAdminHandler } from '../app/api/admin/knowledge/route';
 import { createNewsAdminHandler } from '../app/api/admin/news/route';
@@ -30,6 +35,31 @@ const admin: AdminIdentity = {
   email: 'admin@example.com',
   role: 'admin',
 };
+
+function translationFixture(
+  resourceType: 'news' | 'download' | 'knowledge',
+  resourceId: string,
+  payload: Record<string, unknown>,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: `translation-${resourceId}`,
+    resource_type: resourceType,
+    resource_id: resourceId,
+    source_version: 1,
+    locale: 'en',
+    payload_json: JSON.stringify(payload),
+    status: 'needs_review',
+    origin: 'ai',
+    outdated: 0,
+    failure_reason: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    translated_at: '2026-09-09T00:00:00.000Z',
+    updated_at: '2026-09-09T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('managed content repository', () => {
   it('parses legacy SQLite timestamps as UTC before Taipei display', () => {
@@ -662,6 +692,226 @@ describe('managed content repository', () => {
     await expect(listPublishedDownloads(database.d1)).resolves.toEqual([
       expect.objectContaining({ legacyId: '3853', title: 'NIHOT-回收再生' }),
     ]);
+  });
+
+  it('keeps Chinese reads unchanged while resolving public English news and downloads', async () => {
+    const database = new ContentDatabase();
+    await saveNews(
+      database.d1,
+      {
+        id: 'localized-news',
+        legacyId: '3944',
+        title: '中文新聞',
+        lead: '中文摘要',
+        imageUrl: '/images/news.jpg',
+        highlights: ['中文重點'],
+        videoUrl: 'https://www.youtube.com/embed/example',
+        status: 'draft',
+      },
+      admin,
+    );
+    await setNewsPublication(database.d1, 'localized-news', 'published', admin);
+    await saveDownload(
+      database.d1,
+      {
+        id: 'localized-download',
+        legacyId: '3853',
+        title: '中文下載',
+        status: 'draft',
+      },
+      admin,
+    );
+    await setDownloadPublication(
+      database.d1,
+      'localized-download',
+      'published',
+      admin,
+    );
+    database.seed(
+      'content_translations',
+      translationFixture('news', 'localized-news', {
+        kind: 'news',
+        text: {
+          title: 'English news',
+          lead: 'English summary',
+          highlights: ['English highlight'],
+        },
+        literals: {
+          legacyId: '3944',
+          imageUrl: '/images/news.jpg',
+          videoUrl: 'https://www.youtube.com/embed/example',
+        },
+      }),
+    );
+    database.seed(
+      'content_translations',
+      translationFixture('download', 'localized-download', {
+        kind: 'download',
+        text: { title: 'English download' },
+        literals: { legacyId: '3853' },
+      }),
+    );
+
+    await expect(findPublishedNewsByLegacyId(database.d1, '3944')).resolves.toEqual(
+      expect.objectContaining({
+        title: '中文新聞',
+        lead: '中文摘要',
+        imageUrl: '/images/news.jpg',
+        videoUrl: 'https://www.youtube.com/embed/example',
+      }),
+    );
+    await expect(listPublishedDownloads(database.d1)).resolves.toEqual([
+      expect.objectContaining({ title: '中文下載', legacyId: '3853' }),
+    ]);
+    await expect(listPublishedNewsForLocale(database.d1, 'en')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'localized-news',
+        legacyId: '3944',
+        title: 'English news',
+        lead: 'English summary',
+        highlights: ['English highlight'],
+        imageUrl: '/images/news.jpg',
+        videoUrl: 'https://www.youtube.com/embed/example',
+        locale: 'en',
+        missing: false,
+      }),
+    ]);
+    await expect(
+      findPublishedNewsByLegacyIdForLocale(database.d1, '3944', 'en'),
+    ).resolves.toEqual(
+      expect.objectContaining({ title: 'English news', locale: 'en', missing: false }),
+    );
+    await expect(listPublishedDownloadsForLocale(database.d1, 'en')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'localized-download',
+        legacyId: '3853',
+        title: 'English download',
+        locale: 'en',
+        missing: false,
+      }),
+    ]);
+  });
+
+  it('marks an absent English translation while returning Chinese display fallback', async () => {
+    const database = new ContentDatabase();
+    await saveNews(
+      database.d1,
+      {
+        id: 'missing-english',
+        legacyId: '4000',
+        title: '只有中文',
+        lead: '中文摘要',
+        imageUrl: '/images/news.jpg',
+        highlights: ['中文重點'],
+        status: 'draft',
+      },
+      admin,
+    );
+    await setNewsPublication(database.d1, 'missing-english', 'published', admin);
+    database.seed(
+      'content_translations',
+      translationFixture(
+        'news',
+        'missing-english',
+        {
+          kind: 'news',
+          text: {
+            title: 'Private English news',
+            lead: 'Private English summary',
+            highlights: ['Private English highlight'],
+          },
+          literals: {
+            legacyId: '4000',
+            imageUrl: '/images/news.jpg',
+            videoUrl: null,
+          },
+        },
+        { status: 'draft' },
+      ),
+    );
+
+    await expect(listPublishedNewsForLocale(database.d1, 'en')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'missing-english',
+        title: '只有中文',
+        lead: '中文摘要',
+        requestedLocale: 'en',
+        locale: 'zh-TW',
+        missing: true,
+      }),
+    ]);
+  });
+
+  it('uses English-only knowledge and locale-prefixed source links without rewriting human translations', async () => {
+    const database = new ContentDatabase();
+    await saveKnowledge(
+      database.d1,
+      {
+        id: 'english-knowledge',
+        title: '中文知識',
+        href: '/catalog?type=brand&id=2',
+        body: '中文檢測資訊',
+        tags: ['檢測'],
+        status: 'draft',
+      },
+      admin,
+    );
+    await setKnowledgePublication(
+      database.d1,
+      'english-knowledge',
+      'published',
+      admin,
+    );
+    const translation = translationFixture(
+      'knowledge',
+      'english-knowledge',
+      {
+        kind: 'knowledge',
+        text: {
+          title: 'Inspection knowledge',
+          body: 'X-ray inspection guidance',
+          tags: ['inspection'],
+        },
+        literals: { href: '/catalog?type=brand&id=2' },
+      },
+      { origin: 'human', outdated: 1 },
+    );
+    database.seed('content_translations', translation);
+
+    await expect(
+      retrievePublishedKnowledge(database.d1, '檢測'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'english-knowledge',
+        title: '中文知識',
+        href: '/catalog?type=brand&id=2',
+      }),
+    ]);
+    await expect(
+      retrievePublishedKnowledgeForLocale(database.d1, 'inspection', 'en'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'english-knowledge',
+        title: 'Inspection knowledge',
+        href: '/en/catalog?type=brand&id=2',
+        locale: 'en',
+        missing: false,
+        outdated: true,
+      }),
+    ]);
+    await expect(
+      retrieveSiteKnowledge(database.d1, 'en', 'inspection'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'english-knowledge',
+        title: 'Inspection knowledge',
+        href: '/en/catalog?type=brand&id=2',
+      }),
+    ]);
+    await expect(
+      retrieveSiteKnowledge(database.d1, 'en', '中文'),
+    ).resolves.toEqual([]);
+    expect(database.rows('content_translations')).toEqual([translation]);
   });
 
   it.each([

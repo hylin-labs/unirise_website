@@ -1,5 +1,8 @@
 import { uniriseSchema } from '../db/schema';
 import type { AdminIdentity } from './admin-auth';
+import type { Locale } from './locales';
+import { localizedPath } from './localized-route';
+import { getLocalizedContent } from './translation-repository';
 
 export type ContentStatus = 'draft' | 'published';
 
@@ -38,6 +41,17 @@ export type ManagedKnowledge = KnowledgeSource & {
   publishedAt: string | null;
   updatedAt: string;
 };
+
+type LocalizationMetadata = {
+  requestedLocale: Locale;
+  locale: Locale;
+  missing: boolean;
+  outdated: boolean;
+};
+
+export type LocalizedNews = ManagedNews & LocalizationMetadata;
+export type LocalizedDownload = ManagedDownload & LocalizationMetadata;
+export type LocalizedKnowledgeSource = KnowledgeSource & LocalizationMetadata;
 
 export type KnowledgeInput = {
   id?: string;
@@ -368,6 +382,35 @@ export async function listPublishedNews(db: D1Database) {
   return rows.results.map(newsFromRow);
 }
 
+async function localizeNews(
+  db: D1Database,
+  news: ManagedNews,
+  locale: Locale,
+): Promise<LocalizedNews | null> {
+  const localized = await getLocalizedContent(db, 'news', news.id, locale);
+  if (!localized?.payload || localized.payload.kind !== 'news') return null;
+  return {
+    ...news,
+    title: localized.payload.text.title,
+    lead: localized.payload.text.lead,
+    highlights: localized.payload.text.highlights,
+    requestedLocale: localized.requestedLocale,
+    locale: localized.locale,
+    missing: localized.missing,
+    outdated: localized.outdated,
+  };
+}
+
+export async function listPublishedNewsForLocale(
+  db: D1Database,
+  locale: Locale,
+): Promise<LocalizedNews[]> {
+  const localized = await Promise.all(
+    (await listPublishedNews(db)).map((news) => localizeNews(db, news, locale)),
+  );
+  return localized.filter((news): news is LocalizedNews => news !== null);
+}
+
 export async function listAllNews(db: D1Database) {
   const rows = await db
     .prepare(
@@ -395,6 +438,15 @@ export async function findPublishedNewsByLegacyId(
   return row ? newsFromRow(row) : null;
 }
 
+export async function findPublishedNewsByLegacyIdForLocale(
+  db: D1Database,
+  legacyId: string,
+  locale: Locale,
+): Promise<LocalizedNews | null> {
+  const news = await findPublishedNewsByLegacyId(db, legacyId);
+  return news ? localizeNews(db, news, locale) : null;
+}
+
 export async function listPublishedDownloads(db: D1Database) {
   const rows = await db
     .prepare(
@@ -406,6 +458,42 @@ export async function listPublishedDownloads(db: D1Database) {
     .bind('published')
     .all<DownloadRow>();
   return rows.results.map(downloadFromRow);
+}
+
+async function localizeDownload(
+  db: D1Database,
+  download: ManagedDownload,
+  locale: Locale,
+): Promise<LocalizedDownload | null> {
+  const localized = await getLocalizedContent(
+    db,
+    'download',
+    download.id,
+    locale,
+  );
+  if (!localized?.payload || localized.payload.kind !== 'download') return null;
+  return {
+    ...download,
+    title: localized.payload.text.title,
+    requestedLocale: localized.requestedLocale,
+    locale: localized.locale,
+    missing: localized.missing,
+    outdated: localized.outdated,
+  };
+}
+
+export async function listPublishedDownloadsForLocale(
+  db: D1Database,
+  locale: Locale,
+): Promise<LocalizedDownload[]> {
+  const localized = await Promise.all(
+    (await listPublishedDownloads(db)).map((download) =>
+      localizeDownload(db, download, locale),
+    ),
+  );
+  return localized.filter(
+    (download): download is LocalizedDownload => download !== null,
+  );
 }
 
 export async function listAllDownloads(db: D1Database) {
@@ -470,6 +558,45 @@ function queryTerms(value: string) {
   ];
 }
 
+function scoreKnowledge(source: KnowledgeSource, terms: string[]) {
+  const searchable =
+    `${source.title} ${source.content} ${source.tags.join(' ')}`.toLowerCase();
+  return terms.reduce(
+    (total, term) =>
+      total + (searchable.includes(term) ? (term.length > 2 ? 3 : 1) : 0),
+    0,
+  );
+}
+
+function localizedKnowledgeHref(locale: Locale, href: string) {
+  if (!href.startsWith('/') || href.startsWith('//')) return href;
+  const url = new URL(href, 'https://unirise.invalid');
+  return localizedPath(locale, url.pathname, url.search, url.hash);
+}
+
+async function localizeKnowledge(
+  db: D1Database,
+  source: KnowledgeSource,
+  locale: Locale,
+  fallback: boolean,
+): Promise<LocalizedKnowledgeSource | null> {
+  const localized = await getLocalizedContent(db, 'knowledge', source.id, locale, {
+    fallback,
+  });
+  if (!localized?.payload || localized.payload.kind !== 'knowledge') return null;
+  return {
+    id: source.id,
+    title: localized.payload.text.title,
+    href: localizedKnowledgeHref(locale, localized.payload.literals.href),
+    content: localized.payload.text.body,
+    tags: localized.payload.text.tags,
+    requestedLocale: localized.requestedLocale,
+    locale: localized.locale,
+    missing: localized.missing,
+    outdated: localized.outdated,
+  };
+}
+
 export async function retrievePublishedKnowledge(
   db: D1Database,
   query: string,
@@ -489,15 +616,42 @@ export async function retrievePublishedKnowledge(
   return rows.results
     .map((row) => {
       const source = knowledgeFromRow(row);
-      const searchable =
-        `${source.title} ${source.content} ${source.tags.join(' ')}`.toLowerCase();
-      const score = terms.reduce(
-        (total, term) =>
-          total + (searchable.includes(term) ? (term.length > 2 ? 3 : 1) : 0),
-        0,
-      );
-      return { source, score };
+      return { source, score: scoreKnowledge(source, terms) };
     })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map(({ source }) => source);
+}
+
+export async function retrievePublishedKnowledgeForLocale(
+  db: D1Database,
+  query: string,
+  locale: Locale,
+  limit = 4,
+): Promise<LocalizedKnowledgeSource[]> {
+  if (!Number.isInteger(limit) || limit < 1) return [];
+  const rows = await db
+    .prepare(
+      `SELECT id, title, href, body, tags_json, status, published_at
+       FROM ${uniriseSchema.chatKnowledge}
+       WHERE status = ?
+       ORDER BY published_at DESC`,
+    )
+    .bind('published')
+    .all<KnowledgeRow>();
+  const fallback = locale === 'zh-TW';
+  const localized = await Promise.all(
+    rows.results.map((row) =>
+      localizeKnowledge(db, knowledgeFromRow(row), locale, fallback),
+    ),
+  );
+  const terms = queryTerms(query);
+  return localized
+    .filter(
+      (source): source is LocalizedKnowledgeSource => source !== null,
+    )
+    .map((source) => ({ source, score: scoreKnowledge(source, terms) }))
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, limit)
