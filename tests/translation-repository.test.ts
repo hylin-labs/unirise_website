@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -7,7 +7,10 @@ import { ensureInitialContent } from '../lib/runtime-initialization';
 import { saveNews } from '../lib/content-repository';
 
 const databases: DatabaseSync[] = [];
-afterEach(() => databases.splice(0).forEach((db) => db.close()));
+afterEach(() => {
+  databases.splice(0).forEach((db) => db.close());
+  vi.useRealTimers();
+});
 const actor = {
   id: 'hungyu@gmail.com',
   email: 'hungyu@gmail.com',
@@ -48,11 +51,21 @@ function database(includeBilingual = true) {
           fail = false;
           throw new Error('seed unavailable');
         }
-        const result = sqlite.prepare(sql).run(...values);
+        // Miniflare D1 reports total_changes deltas, including trigger writes.
+        const before = Number(
+          sqlite.prepare('SELECT total_changes() AS n').get()!.n,
+        );
+        const prepared = sqlite.prepare(sql);
+        let results: Record<string, unknown>[] = [];
+        if (prepared.columns().length) results = prepared.all(...values);
+        else prepared.run(...values);
+        const changes =
+          Number(sqlite.prepare('SELECT total_changes() AS n').get()!.n) -
+          before;
         return {
           success: true,
-          results: [],
-          meta: { changes: Number(result.changes) },
+          results,
+          meta: { changes },
         };
       },
     };
@@ -660,5 +673,160 @@ describe('bilingual persistence', () => {
     expect(
       (await api.listTranslationJobItems(d1, jobs[0].id))[0].attempts,
     ).toBe(1);
+  });
+
+  it('accepts source updates with trigger-inclusive D1 accounting and rejects a stale replay', async () => {
+    const { api, d1, source, payload, sqlite } = await seeded();
+    await api.saveTranslation(
+      d1,
+      { ...source, payload, origin: 'human', status: 'published' },
+      actor,
+    );
+    await expect(
+      api.updateCanonicalSource(d1, source, actor),
+    ).resolves.toMatchObject({ sourceVersion: 2 });
+    expect(await api.getTranslation(d1, 'news', '3944')).toMatchObject({
+      outdated: true,
+    });
+    await expect(api.updateCanonicalSource(d1, source, actor)).rejects.toThrow(
+      /changed/,
+    );
+    expect(
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM admin_audit_log WHERE action = 'source.updated'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+  });
+
+  it('makes identical translation save replays preserve timestamps and one audit record', async () => {
+    const { api, d1, source, payload, sqlite } = await seeded();
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-09-10T01:00:00.000Z');
+    const input = {
+      ...source,
+      payload,
+      origin: 'human' as const,
+      status: 'published' as const,
+    };
+    await api.saveTranslation(d1, input, actor);
+    const first = await api.getTranslation(d1, 'news', '3944');
+    vi.setSystemTime('2026-09-10T01:01:00.000Z');
+    await api.saveTranslation(d1, input, actor);
+    expect(await api.getTranslation(d1, 'news', '3944')).toEqual(first);
+    expect(
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM admin_audit_log WHERE action = 'translation.saved'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+    const edited = structuredClone(payload);
+    edited.text.title = 'Updated chicken and fish bone X-ray inspection Xavis';
+    await api.saveTranslation(d1, { ...input, payload: edited }, actor);
+    expect(await api.getTranslation(d1, 'news', '3944')).toMatchObject({
+      payload: edited,
+      updatedAt: '2026-09-10T01:01:00.000Z',
+    });
+    expect(
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM admin_audit_log WHERE action = 'translation.saved'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+  });
+
+  it('makes repeated publication preserve reviewer timestamps and one audit record', async () => {
+    const { api, d1, source, payload, sqlite } = await seeded();
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-09-10T01:00:00.000Z');
+    await api.saveTranslation(
+      d1,
+      { ...source, payload, origin: 'human', status: 'draft' },
+      actor,
+    );
+    await api.setTranslationPublication(d1, 'news', '3944', 'published', actor);
+    const first = await api.getTranslation(d1, 'news', '3944');
+    vi.setSystemTime('2026-09-10T01:01:00.000Z');
+    await api.setTranslationPublication(d1, 'news', '3944', 'published', actor);
+    expect(await api.getTranslation(d1, 'news', '3944')).toEqual(first);
+    expect(
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM admin_audit_log WHERE action = 'translation.published'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+  });
+
+  it('coalesces concurrent identical saves and publication without duplicate audit', async () => {
+    const { api, d1, source, payload, sqlite } = await seeded();
+    const input = {
+      ...source,
+      payload,
+      origin: 'ai' as const,
+      status: 'needs_review' as const,
+    };
+    await expect(
+      Promise.all([
+        api.saveTranslation(d1, input, actor),
+        api.saveTranslation(d1, input, actor),
+      ]),
+    ).resolves.toHaveLength(2);
+    await expect(
+      Promise.all([
+        api.setTranslationPublication(d1, 'news', '3944', 'published', actor),
+        api.setTranslationPublication(d1, 'news', '3944', 'published', actor),
+      ]),
+    ).resolves.toHaveLength(2);
+    expect(
+      sqlite
+        .prepare(
+          'SELECT action, COUNT(*) AS n FROM admin_audit_log GROUP BY action ORDER BY action',
+        )
+        .all(),
+    ).toEqual([
+      { action: 'translation.published', n: 1 },
+      { action: 'translation.saved', n: 1 },
+    ]);
+  });
+
+  it('rejects an obsolete claim even when its output matches the saved English exactly', async () => {
+    const { api, d1, source, payload, sqlite } = await seeded();
+    const input = {
+      ...source,
+      payload,
+      origin: 'ai' as const,
+      status: 'needs_review' as const,
+    };
+    await api.saveTranslation(d1, input, actor);
+    const job = await api.createTranslationJob(
+      d1,
+      'matching-output-stale-claim',
+      actor,
+      [source],
+    );
+    const [item] = await api.listTranslationJobItems(d1, job.id);
+    const first = (await api.claimTranslationJobItem(d1, item.id, {
+      now: '2026-01-01T00:00:00.000Z',
+      leaseSeconds: 30,
+    }))!;
+    await api.claimTranslationJobItem(d1, item.id);
+    await expect(
+      api.saveTranslation(
+        d1,
+        { ...input, claim: { itemId: item.id, token: first.claimToken! } },
+        actor,
+      ),
+    ).rejects.toThrow(/changed/);
+    expect(
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM admin_audit_log WHERE action = 'translation.saved'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
   });
 });

@@ -53,6 +53,9 @@ class ContentPreparedStatement {
   }
 
   async run() {
+    if (normalized(this.sql).startsWith('select ')) {
+      return d1Result(0, this.database.read(this.sql, this.values));
+    }
     return d1Result(this.database.write(this.sql, this.values));
   }
 }
@@ -85,6 +88,9 @@ export class ContentDatabase {
 
   read(sql: string, values: unknown[]) {
     const query = normalized(sql);
+    if (query === 'select changes() as primary_changes') {
+      return [{ primary_changes: this.lastChanges }];
+    }
     const table = query.match(/\sfrom\s+(\w+)/)?.[1];
     if (!table)
       throw new Error(`ContentDatabase does not support read SQL: ${sql}`);

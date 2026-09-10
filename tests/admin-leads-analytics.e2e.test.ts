@@ -59,7 +59,11 @@ class ReleaseStatement {
   }
 
   async run() {
-    return result([], this.database.write(this.sql, this.values));
+    if (compact(this.sql).startsWith('select ')) {
+      return result(this.database.read(this.sql, this.values));
+    }
+    this.database.lastChanges = this.database.write(this.sql, this.values);
+    return result([], this.database.lastChanges);
   }
 
   async first<T>() {
@@ -74,6 +78,7 @@ class ReleaseStatement {
 }
 
 class ReleaseDatabase {
+  lastChanges = 0;
   readonly users: Row[] = [
     { id: 'admin-1', email: 'hungyu@gmail.com', role: 'admin', enabled: 1 },
   ];
@@ -109,6 +114,9 @@ class ReleaseDatabase {
 
   read(sql: string, values: unknown[]) {
     const query = compact(sql);
+    if (query === 'select changes() as primary_changes') {
+      return [{ primary_changes: this.lastChanges }];
+    }
     if (query.includes('from admin_users') && !query.includes('join')) {
       return this.users.filter(
         (row) => row.email === values[0] && row.enabled === 1,

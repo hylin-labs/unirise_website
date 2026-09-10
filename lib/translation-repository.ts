@@ -125,8 +125,11 @@ function audit(
       now,
     );
 }
-async function batch(db: D1Database, statements: D1PreparedStatement[]) {
-  const results = await db.batch(statements);
+async function batch<T = Record<string, unknown>>(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+) {
+  const results = await db.batch<T>(statements);
   if (results.some((result) => !result.success))
     throw new Error('database operation failed');
   return results;
@@ -135,9 +138,17 @@ async function commit(
   db: D1Database,
   write: D1PreparedStatement,
   log: D1PreparedStatement,
+  check = db.prepare('SELECT changes() AS primary_changes'),
 ) {
-  const [result] = await batch(db, [write, log]);
-  if (result.meta.changes !== 1) throw new ContentConflictError();
+  // D1 metadata includes trigger writes. This SELECT captures the primary
+  // write count without changing changes(), which the audit guard also uses.
+  const [, signal] = await batch<{
+    primary_changes: number;
+    replay_valid?: number;
+  }>(db, [write, check, log]);
+  const row = signal.results[0];
+  if (row?.primary_changes !== 1 && row?.replay_valid !== 1)
+    throw new ContentConflictError();
 }
 
 function sourceFromRow(
@@ -431,6 +442,7 @@ export async function saveTranslation(
     boundedId(input.claim.itemId);
     boundedId(input.claim.token);
   }
+  const payloadJson = JSON.stringify(payload);
   const write = db
     .prepare(`INSERT INTO ${schema.contentTranslations}
     (id, resource_type, resource_id, locale, payload_json, status, source_version, origin, outdated, failure_reason, reviewed_by, reviewed_at, translated_at, updated_at)
@@ -444,12 +456,18 @@ export async function saveTranslation(
       origin = excluded.origin, outdated = 0, failure_reason = NULL, reviewed_by = excluded.reviewed_by,
       reviewed_at = excluded.reviewed_at, translated_at = excluded.translated_at, updated_at = excluded.updated_at
     WHERE (${schema.contentTranslations}.origin = 'ai' OR excluded.origin = 'human')
-      AND ${schema.contentTranslations}.updated_at IS ? AND ${schema.contentTranslations}.payload_json IS ?`)
+      AND ${schema.contentTranslations}.updated_at IS ? AND ${schema.contentTranslations}.payload_json IS ?
+      AND (${schema.contentTranslations}.payload_json IS NOT excluded.payload_json
+        OR ${schema.contentTranslations}.status <> excluded.status
+        OR ${schema.contentTranslations}.source_version <> excluded.source_version
+        OR ${schema.contentTranslations}.origin <> excluded.origin
+        OR ${schema.contentTranslations}.outdated <> 0
+        OR ${schema.contentTranslations}.failure_reason IS NOT NULL)`)
     .bind(
       crypto.randomUUID(),
       input.resourceType,
       input.resourceId,
-      JSON.stringify(payload),
+      payloadJson,
       input.status,
       input.sourceVersion,
       input.origin,
@@ -484,6 +502,33 @@ export async function saveTranslation(
       },
       now,
     ),
+    db
+      .prepare(`SELECT changes() AS primary_changes, EXISTS (
+      SELECT 1 FROM ${schema.contentTranslations} t
+      JOIN ${sourceTables[input.resourceType]} s ON s.id = t.resource_id
+      WHERE t.resource_type = ? AND t.resource_id = ? AND t.locale = 'en'
+        AND t.payload_json = ? AND t.status = ? AND t.source_version = ? AND t.origin = ?
+        AND t.outdated = 0 AND t.failure_reason IS NULL AND s.source_version = ?
+        AND (? IS NULL OR EXISTS (SELECT 1 FROM ${schema.translationJobItems}
+          WHERE id = ? AND claim_token = ? AND state = 'running' AND lease_expires_at > ?
+            AND resource_type = ? AND resource_id = ? AND source_version = ?))
+    ) AS replay_valid`)
+      .bind(
+        input.resourceType,
+        input.resourceId,
+        payloadJson,
+        input.status,
+        input.sourceVersion,
+        input.origin,
+        input.sourceVersion,
+        input.claim?.itemId ?? null,
+        input.claim?.itemId ?? null,
+        input.claim?.token ?? null,
+        now,
+        input.resourceType,
+        input.resourceId,
+        input.sourceVersion,
+      ),
   );
   return getTranslation(db, input.resourceType, input.resourceId);
 }
@@ -504,7 +549,7 @@ export async function setTranslationPublication(
     db,
     db
       .prepare(`UPDATE ${schema.contentTranslations} SET status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ?
-    WHERE id = ? AND updated_at = ? AND payload_json = ?
+    WHERE id = ? AND updated_at = ? AND payload_json = ? AND status <> ?
       AND (? <> 'published' OR EXISTS (SELECT 1 FROM ${sourceTables[resourceType]} WHERE id = ? AND source_version = ?))`)
       .bind(
         status,
@@ -515,10 +560,27 @@ export async function setTranslationPublication(
         existing.updatedAt,
         JSON.stringify(existing.payload),
         status,
+        status,
         resourceId,
         existing.sourceVersion,
       ),
     audit(db, actor, `translation.${status}`, existing, { status }, now),
+    db
+      .prepare(`SELECT changes() AS primary_changes, EXISTS (
+      SELECT 1 FROM ${schema.contentTranslations}
+      WHERE id = ? AND status = ? AND source_version = ? AND payload_json = ?
+        AND (? <> 'published' OR EXISTS (SELECT 1 FROM ${sourceTables[resourceType]}
+          WHERE id = ? AND source_version = ?))
+    ) AS replay_valid`)
+      .bind(
+        existing.id,
+        status,
+        existing.sourceVersion,
+        JSON.stringify(existing.payload),
+        status,
+        resourceId,
+        existing.sourceVersion,
+      ),
   );
 }
 

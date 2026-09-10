@@ -344,8 +344,15 @@ async function commitContentSave(
   write: D1PreparedStatement,
   audit: D1PreparedStatement,
 ) {
-  const [result] = await db.batch([write, audit]);
-  if (result.meta.changes !== 1) throw new ContentConflictError();
+  // D1 metadata counts trigger writes. SQLite changes() reports only the
+  // guarded primary write and is unchanged by the intervening SELECT.
+  const [, signal] = await db.batch<{ primary_changes: number }>([
+    write,
+    db.prepare('SELECT changes() AS primary_changes'),
+    audit,
+  ]);
+  if (signal.results[0]?.primary_changes !== 1)
+    throw new ContentConflictError();
 }
 
 export async function listPublishedNews(db: D1Database) {
