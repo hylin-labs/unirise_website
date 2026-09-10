@@ -1,4 +1,6 @@
 # Copy this file to .dev.vars and set each value locally. Do not commit .dev.vars.
+# Server-only Groq key for the test chatbot and administrator-initiated English drafts.
+# Never expose this as a client variable or add a separate browser credential.
 GROQ_API_KEY=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
