@@ -312,6 +312,124 @@ describe('translation service', () => {
     expect(protectedText).not.toContain('-__UNIRISE_LITERAL_');
   });
 
+  it('restores dollar signs in protected URLs literally with no placeholder residue', async () => {
+    const { source } = await seeded();
+    const literalSource = structuredClone(source);
+    if (literalSource.payload.kind !== 'news')
+      throw new Error('expected news source');
+    literalSource.payload.text.lead =
+      '詳見 https://example.com/inspect?q=$&x=1。';
+    const groq = await import('../lib/groq-translation');
+    const translated = await groq.translateWithGroq(literalSource, {
+      groqApiKey: 'server-only-key',
+      fetcher: async (_url, init) => {
+        const request = requestJson(init) as {
+          messages: Array<{ content: string }>;
+        };
+        const sent = JSON.parse(request.messages[1].content) as {
+          source: Record<string, unknown>;
+        };
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(sent.source) } }],
+          }),
+        );
+      },
+    });
+
+    if (translated.kind !== 'news') throw new Error('expected news');
+    expect(translated.text.lead).toBe(literalSource.payload.text.lead);
+    expect(JSON.stringify(translated)).not.toContain('__UNIRISE_LITERAL_');
+  });
+
+  it('protects whole parenthesized phone and Celsius spans and rejects their removal', async () => {
+    const { source } = await seeded();
+    const literalSource = structuredClone(source);
+    if (literalSource.payload.kind !== 'news')
+      throw new Error('expected news source');
+    literalSource.payload.text.lead = '電話：(06) 3319283，溫度 -10℃。';
+    const groq = await import('../lib/groq-translation');
+    let protectedText = '';
+    await groq.translateWithGroq(literalSource, {
+      groqApiKey: 'server-only-key',
+      fetcher: async (_url, init) => {
+        const request = requestJson(init) as {
+          messages: Array<{ content: string }>;
+        };
+        const sent = JSON.parse(request.messages[1].content) as {
+          source: { text: { lead: string } };
+        };
+        protectedText = sent.source.text.lead;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(sent.source) } }],
+          }),
+        );
+      },
+    });
+
+    expect(protectedText).toMatch(
+      /^電話：__UNIRISE_LITERAL_\d+__，溫度 __UNIRISE_LITERAL_\d+__。$/,
+    );
+    await expect(
+      groq.translateWithGroq(literalSource, {
+        groqApiKey: 'server-only-key',
+        fetcher: async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      ...literalSource.payload,
+                      text: {
+                        ...literalSource.payload.text,
+                        lead: '電話：06) 3319283，溫度 10℃。',
+                      },
+                    }),
+                  },
+                },
+              ],
+            }),
+          ),
+      }),
+    ).rejects.toMatchObject({ code: 'translation_output_invalid' });
+  });
+
+  it('stops URL protection at a full-width sentence boundary', async () => {
+    const { source } = await seeded();
+    const literalSource = structuredClone(source);
+    if (literalSource.payload.kind !== 'news')
+      throw new Error('expected news source');
+    literalSource.payload.text.lead =
+      '詳見 https://example.com/inspect?mode=cold#limits。請聯絡我們。';
+    const groq = await import('../lib/groq-translation');
+    let protectedText = '';
+    const translated = await groq.translateWithGroq(literalSource, {
+      groqApiKey: 'server-only-key',
+      fetcher: async (_url, init) => {
+        const request = requestJson(init) as {
+          messages: Array<{ content: string }>;
+        };
+        const sent = JSON.parse(request.messages[1].content) as {
+          source: { text: { lead: string } };
+        };
+        protectedText = sent.source.text.lead;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(sent.source) } }],
+          }),
+        );
+      },
+    });
+
+    expect(protectedText).toMatch(
+      /^詳見 __UNIRISE_LITERAL_\d+__。請聯絡我們。$/,
+    );
+    if (translated.kind !== 'news') throw new Error('expected news');
+    expect(translated.text.lead).toBe(literalSource.payload.text.lead);
+  });
+
   it('rejects missing or duplicated literal placeholders', async () => {
     const { source } = await seeded();
     const groq = await import('../lib/groq-translation');

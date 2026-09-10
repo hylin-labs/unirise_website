@@ -12,11 +12,12 @@ const MAX_TOKENS = 2_000;
 const technicalToken = /\{[a-zA-Z]+\}|[a-zA-Z0-9]+(?:[._@+/-][a-zA-Z0-9]+)*/;
 const protectedTextSpan = new RegExp(
   [
-    'https?:\\/\\/[^\\s"\'<>]+',
+    "https?:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9._~:/?@!$&'()*+,;=%#-]*[A-Za-z0-9_~:/?@!$&'()*+,;=%#-])?",
     "\\/(?!\\/)[A-Za-z0-9][A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*",
     "[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+    '\\(\\d{2,4}\\)\\s*\\d{5,10}',
     '(?:\\+?\\d[\\d ()-]{5,}\\d)',
-    '[+-]\\d+(?:\\.\\d+)?\\s?(?:°[CF]|[A-Za-zµμ%]+)',
+    '[+-]\\d+(?:\\.\\d+)?\\s?(?:[°℃](?:[CF])?|[A-Za-zµμ%]+)',
     technicalToken.source,
   ].join('|'),
   'g',
@@ -123,7 +124,7 @@ function restoreProtectedPayload(value: unknown, replacements: Replacement[]) {
       for (const replacement of replacements)
         restored = restored.replaceAll(
           replacement.placeholder,
-          replacement.value,
+          () => replacement.value,
         );
       return restored;
     }
