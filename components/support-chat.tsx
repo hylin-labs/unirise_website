@@ -3,6 +3,9 @@
 import { LoaderCircle, MessageCircle, Send, X } from 'lucide-react';
 import { SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { publicAnalyticsPath } from '../lib/public-analytics-path';
+import type { Locale } from '../lib/locales';
+import { initialPublicContent } from '../lib/public-content';
+import type { ChromePayload } from '../lib/translation-types';
 import styles from './support-chat.module.css';
 
 type ChatSource = { title: string; href: string };
@@ -13,27 +16,25 @@ type ChatMessage = {
 };
 type LeadRequestType = 'quote' | 'specialist';
 
-const welcome: ChatMessage = {
-  role: 'assistant',
-  content:
-    '您好，我是合軒科技的測試版網站助理。我可以協助您了解產品領域、代理品牌、聯絡方式與詢價流程。',
-};
-const suggestions = [
-  '有哪些食品分選方案？',
-  'X 光檢測能協助什麼？',
-  '如何聯絡或詢價？',
-];
-
-function errorMessage(code?: string) {
-  if (code === 'rate_limited') return '目前詢問較多，請稍後一分鐘再試。';
-  if (code === 'chat_not_configured')
-    return '測試版聊天服務正在設定中，請稍後再試或直接聯絡合軒科技。';
-  return '目前無法取得回覆，請稍後再試或直接使用詢價系統。';
+function errorMessage(labels: ChromePayload['text']['chat'], code?: string) {
+  if (code === 'rate_limited') return labels.rateLimited;
+  if (code === 'chat_not_configured') return labels.notConfigured;
+  return labels.error;
 }
 
-export function SupportChat() {
+type SupportChatProps = {
+  locale: Locale;
+  labels?: ChromePayload['text']['chat'];
+};
+
+export function SupportChat({
+  locale: _locale,
+  labels = initialPublicContent.chrome.text.chat,
+}: SupportChatProps) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([welcome]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: labels.welcome },
+  ]);
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
   const [leadActionsAvailable, setLeadActionsAvailable] = useState(false);
@@ -79,7 +80,7 @@ export function SupportChat() {
           content:
             response.ok && payload.answer
               ? payload.answer
-              : errorMessage(payload.error),
+              : errorMessage(labels, payload.error),
           sources: response.ok ? payload.sources : undefined,
         },
       ]);
@@ -87,7 +88,7 @@ export function SupportChat() {
     } catch {
       setMessages((current) => [
         ...current,
-        { role: 'assistant', content: errorMessage() },
+        { role: 'assistant', content: errorMessage(labels) },
       ]);
     } finally {
       setSending(false);
@@ -145,8 +146,8 @@ export function SupportChat() {
       if (!response.ok) {
         setLeadStatus(
           payload.error === 'rate_limited'
-            ? '送出次數較多，請稍後再試。'
-            : '資料未能送出，請確認必填欄位後再試。',
+            ? labels.leadRateLimited
+            : labels.leadInvalid,
         );
         return;
       }
@@ -154,12 +155,10 @@ export function SupportChat() {
       setLeadRequestType(null);
       window.setTimeout(() => leadOriginRef.current?.focus(), 0);
       setLeadStatus(
-        payload.followUpDelayed
-          ? '已收到您的需求；目前通知服務暫時無法使用，聯絡可能稍有延遲。'
-          : '已收到您的需求，我們會儘快與您聯絡。',
+        payload.followUpDelayed ? labels.leadDelayed : labels.leadReceived,
       );
     } catch {
-      setLeadStatus('資料未能送出，請稍後再試。');
+      setLeadStatus(labels.leadError);
     } finally {
       setLeadSending(false);
     }
@@ -171,19 +170,19 @@ export function SupportChat() {
         <section
           id="support-chat-panel"
           className={styles.panel}
-          aria-label="合軒科技網站助理"
+          aria-label={labels.title}
         >
           <header className={styles.header}>
             <div>
-              <strong>合軒科技網站助理</strong>
-              <small>測試版｜公開資訊問答</small>
+              <strong>{labels.title}</strong>
+              <small>{labels.subtitle}</small>
             </div>
             <button
               className={styles.close}
               type="button"
               onClick={() => setOpen(false)}
               disabled={leadSending}
-              aria-label="關閉聊天"
+              aria-label={labels.close}
             >
               <X size={20} />
             </button>
@@ -194,7 +193,7 @@ export function SupportChat() {
           >
             {messages.length === 1 && (
               <div className={styles.suggestions}>
-                {suggestions.map((suggestion) => (
+                {labels.suggestions.map((suggestion) => (
                   <button
                     key={suggestion}
                     type="button"
@@ -216,7 +215,7 @@ export function SupportChat() {
                   message.sources &&
                   message.sources.length > 0 && (
                     <div className={styles.sources}>
-                      參考網站內容：
+                      {labels.sources}
                       {message.sources.map((source) => (
                         <a href={source.href} key={source.href}>
                           {source.title}
@@ -228,13 +227,13 @@ export function SupportChat() {
             ))}
             {sending && (
               <p className={styles.message}>
-                <LoaderCircle size={16} aria-label="正在回覆" />
+                <LoaderCircle size={16} aria-label={labels.replying} />
               </p>
             )}
           </div>
           {leadActionsAvailable && (
             <div className={styles.leadArea}>
-              <div className={styles.leadActions} aria-label="後續服務">
+              <div className={styles.leadActions} aria-label={labels.followUp}>
                 <button
                   type="button"
                   onClick={(event) =>
@@ -243,7 +242,7 @@ export function SupportChat() {
                   disabled={leadSending}
                   aria-pressed={leadRequestType === 'quote'}
                 >
-                  索取報價
+                  {labels.quote}
                 </button>
                 <button
                   type="button"
@@ -253,7 +252,7 @@ export function SupportChat() {
                   disabled={leadSending}
                   aria-pressed={leadRequestType === 'specialist'}
                 >
-                  聯絡專員
+                  {labels.specialist}
                 </button>
               </div>
               {leadRequestType && (
@@ -263,26 +262,29 @@ export function SupportChat() {
                   aria-busy={leadSending}
                   aria-label={
                     leadRequestType === 'quote'
-                      ? '索取報價表單'
-                      : '聯絡專員表單'
+                      ? labels.quoteForm
+                      : labels.specialistForm
                   }
                 >
                   <div className={styles.leadFormHeader}>
                     <strong>
-                      {leadRequestType === 'quote' ? '索取報價' : '聯絡專員'}
+                      {leadRequestType === 'quote'
+                        ? labels.quote
+                        : labels.specialist}
                     </strong>
                     <button
                       type="button"
                       onClick={closeLeadForm}
                       disabled={leadSending}
-                      aria-label="關閉聯絡表單"
+                      aria-label={labels.closeLead}
                     >
                       <X size={16} />
                     </button>
                   </div>
                   <div className={styles.leadGrid}>
                     <label>
-                      姓名<span aria-hidden="true">＊</span>
+                      {labels.name}
+                      <span aria-hidden="true">＊</span>
                       <input
                         ref={leadNameRef}
                         name="name"
@@ -292,7 +294,8 @@ export function SupportChat() {
                       />
                     </label>
                     <label>
-                      電子信箱<span aria-hidden="true">＊</span>
+                      {labels.email}
+                      <span aria-hidden="true">＊</span>
                       <input
                         type="email"
                         name="email"
@@ -302,7 +305,7 @@ export function SupportChat() {
                       />
                     </label>
                     <label>
-                      公司
+                      {labels.company}
                       <input
                         name="company"
                         maxLength={160}
@@ -310,15 +313,16 @@ export function SupportChat() {
                       />
                     </label>
                     <label>
-                      電話
+                      {labels.phone}
                       <input name="phone" maxLength={50} autoComplete="tel" />
                     </label>
                     <label className={styles.leadFull}>
-                      產品／主題
+                      {labels.topic}
                       <input name="topic" maxLength={200} />
                     </label>
                     <label className={styles.leadFull}>
-                      需求說明<span aria-hidden="true">＊</span>
+                      {labels.message}
+                      <span aria-hidden="true">＊</span>
                       <textarea
                         name="message"
                         required
@@ -327,13 +331,13 @@ export function SupportChat() {
                       />
                     </label>
                   </div>
-                  <p>聯絡資料僅用於回覆本次需求。</p>
+                  <p>{labels.contactPrivacy}</p>
                   <button
                     className={styles.leadSubmit}
                     type="submit"
                     disabled={leadSending}
                   >
-                    {leadSending ? '送出中…' : '送出需求'}
+                    {leadSending ? labels.sending : labels.submitLead}
                   </button>
                 </form>
               )}
@@ -342,7 +346,7 @@ export function SupportChat() {
               )}
             </div>
           )}
-          <p className={styles.notice}>聊天內容請勿輸入敏感個資。</p>
+          <p className={styles.notice}>{labels.privacy}</p>
           <form className={styles.form} onSubmit={submit}>
             <textarea
               ref={textareaRef}
@@ -350,13 +354,13 @@ export function SupportChat() {
               onChange={(event) => setValue(event.target.value)}
               maxLength={700}
               rows={2}
-              placeholder="請輸入您的問題"
-              aria-label="聊天問題"
+              placeholder={labels.placeholder}
+              aria-label={labels.question}
             />
             <button
               type="submit"
               disabled={sending || !value.trim()}
-              aria-label="送出問題"
+              aria-label={labels.send}
             >
               <Send size={18} />
             </button>
@@ -370,7 +374,7 @@ export function SupportChat() {
         disabled={leadSending}
         aria-expanded={open}
         aria-controls="support-chat-panel"
-        aria-label={open ? '關閉聊天' : '開啟聊天'}
+        aria-label={open ? labels.close : labels.open}
       >
         {open ? <X size={26} /> : <MessageCircle size={27} />}
       </button>

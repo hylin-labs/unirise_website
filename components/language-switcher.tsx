@@ -16,8 +16,11 @@ function browserLocation() {
   return { hash: window.location.hash, search: window.location.search };
 }
 
-export function LanguageSwitcher() {
-  const pathname = usePathname() || '/';
+export function LanguageSwitcher({
+  pathname: suppliedPathname,
+}: { pathname?: string } = {}) {
+  const routedPathname = usePathname() || '/';
+  const pathname = suppliedPathname || routedPathname;
   const [location, setLocation] = useState(EMPTY_BROWSER_LOCATION);
   const currentLocale = localeFromPathname(pathname);
 
@@ -32,11 +35,23 @@ export function LanguageSwitcher() {
   return (
     <nav aria-label="Language">
       {(['zh-TW', 'en'] as const).map((locale) => {
-        const href = localizedPath(locale, pathname, location.search, location.hash);
-        const prepareNavigation = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+        const href = localizedPath(
+          locale,
+          pathname,
+          location.search,
+          location.hash,
+        );
+        const prepareNavigation = (
+          event: ReactMouseEvent<HTMLAnchorElement>,
+        ) => {
           writeLocaleCookie(locale);
           const currentLocation = browserLocation();
-          const correctedHref = localizedPath(locale, pathname, currentLocation.search, currentLocation.hash);
+          const correctedHref = localizedPath(
+            locale,
+            pathname,
+            currentLocation.search,
+            currentLocation.hash,
+          );
           event.currentTarget.setAttribute('href', correctedHref);
         };
 
