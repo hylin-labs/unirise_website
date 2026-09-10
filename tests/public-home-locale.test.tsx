@@ -97,6 +97,12 @@ describe('PublicHome locale rendering', () => {
     expect(html).toContain('href="/catalog?type=industry&amp;id=73"');
     expect(html).toContain('href="/news?id=3944"');
     expect(html).toContain('href="/contact"');
+    expect(html).toMatch(
+      /original-nav-item[^>]*><a href="\/downloads">下載專區<\/a>/,
+    );
+    expect(html).toMatch(
+      /original-footer[\s\S]*href="\/downloads\?id=3853">下載專區<\/a>/,
+    );
     expect(html).toContain('href="/en"');
     expect(html).toContain('https://goo.gl/maps/dvcWWbp4xf8AZ3dF6');
     expect(html).toContain('https://goo.gl/maps/oqLuxoMzVYdmJEwg9');
@@ -134,6 +140,12 @@ describe('PublicHome locale rendering', () => {
     expect(html).toContain('href="/en/catalog?type=industry&amp;id=73"');
     expect(html).toContain('href="/en/news?id=3944"');
     expect(html).toContain('href="/en/contact"');
+    expect(html).toMatch(
+      /original-nav-item[^>]*><a href="\/en\/downloads">Downloads<\/a>/,
+    );
+    expect(html).toMatch(
+      /original-footer[\s\S]*href="\/en\/downloads\?id=3853">Downloads<\/a>/,
+    );
     expect(html).toContain('href="/"');
     expect(html).toContain('https://goo.gl/maps/dvcWWbp4xf8AZ3dF6');
     expect(html).toContain('aria-label="Open chat"');

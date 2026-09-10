@@ -196,7 +196,7 @@ export function OriginalHeader({
           <div
             className={`original-nav-item ${mobilePanel === 'downloads' ? 'mobile-open' : ''}`}
           >
-            <a href={internalHref(locale, chrome.literals.navUrls[3])}>
+            <a href={localizedPath(locale, '/downloads')}>
               {nav[3]}
             </a>
             <button
