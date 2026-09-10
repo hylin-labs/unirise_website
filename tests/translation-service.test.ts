@@ -104,6 +104,43 @@ function groqJson() {
   };
 }
 
+function literalTokens(value: string) {
+  return value.match(/__UNIRISE_LITERAL_\d+__/g) ?? [];
+}
+
+function englishGroqJson() {
+  return async (_url: string | URL | Request, init?: RequestInit) => {
+    const request = requestJson(init) as {
+      messages: Array<{ content: string }>;
+    };
+    const output = structuredClone(JSON.parse(request.messages[1].content)) as {
+      source: {
+        kind: string;
+        text: { title: string; lead: string; highlights: string[] };
+        literals: Record<string, unknown>;
+      };
+    };
+    const title = literalTokens(output.source.text.title);
+    const lead = literalTokens(output.source.text.lead);
+    const highlights = output.source.text.highlights.map(literalTokens);
+    output.source.text = {
+      title: `Chicken and fish bone ${title[0]}-ray inspection machine ${title[1]}`,
+      lead: `This ${lead[0]}-ray inspection system uses ${lead[1]}-ray imaging and ${lead[2]} recognition to improve food safety.`,
+      highlights: [
+        'Detects low-density fish bones and chicken bones in food products.',
+        `The ${highlights[1][0]} ${highlights[1][1]} deep-learning algorithm improves fine-bone detection.`,
+        `The ${highlights[2][0]} hygienic design supports fresh, chilled, frozen, and cooked foods.`,
+      ],
+    };
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(output.source) } }],
+      }),
+      { status: 200 },
+    );
+  };
+}
+
 function requestJson(init?: RequestInit) {
   if (typeof init?.body !== 'string') throw new Error('expected JSON body');
   return JSON.parse(init.body) as Record<string, unknown>;
@@ -124,17 +161,25 @@ describe('translation service', () => {
       jobId: job.id,
       actor,
       groqApiKey: 'server-only-key',
-      fetcher: groqJson(),
+      fetcher: englishGroqJson(),
     });
 
     expect(result).toMatchObject({ state: 'succeeded' });
     expect(
       await repository.getTranslation(d1, 'news', source.resourceId),
     ).toMatchObject({
-      payload: source.payload,
       origin: 'ai',
       status: 'needs_review',
     });
+    const saved = await repository.getTranslation(
+      d1,
+      'news',
+      source.resourceId,
+    );
+    if (saved?.payload.kind !== 'news') throw new Error('expected news');
+    expect(saved.payload.text.title).toBe(
+      'Chicken and fish bone X-ray inspection machine Xavis',
+    );
     expect(
       await repository.getLocalizedContent(d1, 'news', source.resourceId, 'en'),
     ).toMatchObject({
@@ -197,6 +242,111 @@ describe('translation service', () => {
     expect(translated.literals).toEqual(source.payload.literals);
     expect(JSON.stringify(requestPayload)).not.toContain(
       JSON.stringify(source.payload.literals).slice(1, -1),
+    );
+  });
+
+  it('uses strict resource-specific JSON schema mode for Groq', async () => {
+    const { source } = await seeded();
+    const groq = await import('../lib/groq-translation');
+    let request: Record<string, unknown> | undefined;
+    await groq.translateWithGroq(source, {
+      groqApiKey: 'server-only-key',
+      fetcher: async (_url, init) => {
+        request = requestJson(init);
+        const source = JSON.parse(
+          (request.messages as Array<{ content: string }>)[1].content,
+        ) as { source: Record<string, unknown> };
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(source.source) } }],
+          }),
+        );
+      },
+    });
+
+    expect(request?.response_format).toMatchObject({
+      type: 'json_schema',
+      json_schema: {
+        name: 'unirise_news_translation',
+        strict: true,
+        schema: {
+          type: 'object',
+          required: ['kind', 'text', 'literals'],
+          additionalProperties: false,
+        },
+      },
+    });
+  });
+
+  it('protects full URLs and signed measurements before generic technical tokens', async () => {
+    const { source } = await seeded();
+    const literalSource = structuredClone(source);
+    if (literalSource.payload.kind !== 'news')
+      throw new Error('expected news source');
+    literalSource.payload.text.lead =
+      '請維持 -10°C，詳見 https://example.com/inspect?mode=cold#limits。';
+    const groq = await import('../lib/groq-translation');
+    let protectedText = '';
+    await groq.translateWithGroq(literalSource, {
+      groqApiKey: 'server-only-key',
+      fetcher: async (_url, init) => {
+        const request = requestJson(init) as {
+          messages: Array<{ content: string }>;
+        };
+        const sent = JSON.parse(request.messages[1].content) as {
+          source: { text: { lead: string } };
+        };
+        protectedText = sent.source.text.lead;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(sent.source) } }],
+          }),
+        );
+      },
+    });
+
+    expect(protectedText).not.toContain(
+      'https://example.com/inspect?mode=cold#limits',
+    );
+    expect(protectedText).toContain('請維持 __UNIRISE_LITERAL_');
+    expect(protectedText).not.toContain('-__UNIRISE_LITERAL_');
+  });
+
+  it('rejects missing or duplicated literal placeholders', async () => {
+    const { source } = await seeded();
+    const groq = await import('../lib/groq-translation');
+    const malformed = async (mutate: (value: string) => string) =>
+      expect(
+        groq.translateWithGroq(source, {
+          groqApiKey: 'server-only-key',
+          fetcher: async (_url, init) => {
+            const request = requestJson(init) as {
+              messages: Array<{ content: string }>;
+            };
+            const sent = JSON.parse(request.messages[1].content) as {
+              source: Record<string, unknown>;
+            };
+            return new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: mutate(JSON.stringify(sent.source)),
+                    },
+                  },
+                ],
+              }),
+            );
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'translation_output_invalid' });
+
+    await malformed((value) => value.replace('__UNIRISE_LITERAL_0__', ''));
+    await malformed((value) =>
+      value.replace(
+        '__UNIRISE_LITERAL_0__',
+        '__UNIRISE_LITERAL_0____UNIRISE_LITERAL_0__',
+      ),
     );
   });
 
@@ -289,5 +439,95 @@ describe('translation service', () => {
       state: 'succeeded',
       resourceId: source.resourceId,
     });
+  });
+
+  it('reclaims an expired interrupted item', async () => {
+    const { d1, repository, source } = await seeded();
+    const service = await import('../lib/translation-service');
+    const job = await repository.createTranslationJob(
+      d1,
+      'recover-expired-claim',
+      actor,
+      [source],
+    );
+    const [item] = await repository.listTranslationJobItems(d1, job.id);
+    const abandoned = await repository.claimTranslationJobItem(d1, item.id, {
+      now: '2026-01-01T00:00:00.000Z',
+      leaseSeconds: 10,
+    });
+
+    const result = await service.processNextTranslationJobItem({
+      db: d1,
+      jobId: job.id,
+      actor,
+      groqApiKey: 'server-only-key',
+      fetcher: englishGroqJson(),
+    });
+
+    expect(result).toMatchObject({ state: 'succeeded', itemId: item.id });
+    expect(
+      (await repository.listTranslationJobItems(d1, job.id))[0],
+    ).toMatchObject({
+      state: 'succeeded',
+      attempts: 2,
+    });
+    await expect(
+      repository.finishTranslationJobItem(d1, item.id, abandoned!.claimToken!, {
+        state: 'failed',
+        failureReason: 'abandoned_worker',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('does not reclaim an active claim while processing a later pending item', async () => {
+    const { d1, repository, source } = await seeded();
+    const service = await import('../lib/translation-service');
+    const download = (await repository.enumerateSources(d1)).find(
+      (candidate) => candidate.resourceType === 'download',
+    )!;
+    const job = await repository.createTranslationJob(
+      d1,
+      'preserve-active-claim',
+      actor,
+      [source, download],
+    );
+    const activeItem = (
+      await repository.listTranslationJobItems(d1, job.id)
+    ).find((item) => item.resourceId === download.resourceId)!;
+    const active = await repository.claimTranslationJobItem(d1, activeItem.id);
+
+    const result = await service.processNextTranslationJobItem({
+      db: d1,
+      jobId: job.id,
+      actor,
+      groqApiKey: 'server-only-key',
+      fetcher: englishGroqJson(),
+    });
+
+    expect(result).toMatchObject({
+      state: 'succeeded',
+      resourceId: source.resourceId,
+    });
+    expect(
+      (await repository.listTranslationJobItems(d1, job.id)).find(
+        (item) => item.id === activeItem.id,
+      ),
+    ).toMatchObject({
+      state: 'running',
+      attempts: 1,
+      claimToken: active!.claimToken,
+    });
+  });
+
+  it('times out when the provider stalls while its response body is read', async () => {
+    const { source } = await seeded();
+    const groq = await import('../lib/groq-translation');
+    await expect(
+      groq.translateWithGroq(source, {
+        groqApiKey: 'server-only-key',
+        timeoutMs: 5,
+        fetcher: async () => new Response(new ReadableStream()),
+      }),
+    ).rejects.toMatchObject({ code: 'translation_timeout' });
   });
 });

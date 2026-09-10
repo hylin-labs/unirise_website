@@ -36,7 +36,11 @@ function safeFailureReason(error: unknown) {
     : 'translation_persistence_failed';
 }
 
-/** Processes one pending item so an administrator can poll a bounded job. */
+function hasExpiredLease(leaseExpiresAt: string | null) {
+  return !!leaseExpiresAt && Date.parse(leaseExpiresAt) <= Date.now();
+}
+
+/** Processes one pending or expired item so an administrator can poll a bounded job. */
 export async function processNextTranslationJobItem({
   db,
   jobId,
@@ -44,7 +48,10 @@ export async function processNextTranslationJobItem({
   ...groq
 }: ProcessTranslationJobItemOptions): Promise<ProcessTranslationJobItemResult> {
   const item = (await listTranslationJobItems(db, jobId)).find(
-    (candidate) => candidate.state === 'pending',
+    (candidate) =>
+      candidate.state === 'pending' ||
+      (candidate.state === 'running' &&
+        hasExpiredLease(candidate.leaseExpiresAt)),
   );
   if (!item) return { state: 'idle' };
   const claimed = await claimTranslationJobItem(db, item.id);

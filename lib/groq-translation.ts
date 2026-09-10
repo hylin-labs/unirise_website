@@ -9,7 +9,18 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-20b';
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_TOKENS = 2_000;
-const technicalToken = /\{[a-zA-Z]+\}|[a-zA-Z0-9]+(?:[._@+/-][a-zA-Z0-9]+)*/g;
+const technicalToken = /\{[a-zA-Z]+\}|[a-zA-Z0-9]+(?:[._@+/-][a-zA-Z0-9]+)*/;
+const protectedTextSpan = new RegExp(
+  [
+    'https?:\\/\\/[^\\s"\'<>]+',
+    "\\/(?!\\/)[A-Za-z0-9][A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*",
+    "[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+    '(?:\\+?\\d[\\d ()-]{5,}\\d)',
+    '[+-]\\d+(?:\\.\\d+)?\\s?(?:°[CF]|[A-Za-zµμ%]+)',
+    technicalToken.source,
+  ].join('|'),
+  'g',
+);
 
 export type GroqTranslationErrorCode =
   | 'translation_not_configured'
@@ -32,23 +43,23 @@ export type GroqTranslationOptions = {
 
 type Replacement = { placeholder: string; value: string };
 
-function replaceTechnicalTokens(
+function protectTextLiterals(
   value: unknown,
   replacements: Replacement[],
 ): unknown {
   if (typeof value === 'string')
-    return value.replace(technicalToken, (token) => {
-      const placeholder = `__UNIRISE_LITERAL_${String(replacements.length).padStart(3, '0')}__`;
+    return value.replace(protectedTextSpan, (token) => {
+      const placeholder = `__UNIRISE_LITERAL_${replacements.length}__`;
       replacements.push({ placeholder, value: token });
       return placeholder;
     });
   if (Array.isArray(value))
-    return value.map((item) => replaceTechnicalTokens(item, replacements));
+    return value.map((item) => protectTextLiterals(item, replacements));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => [
       key,
-      replaceTechnicalTokens(item, replacements),
+      protectTextLiterals(item, replacements),
     ]),
   );
 }
@@ -58,7 +69,7 @@ function protectLiteralFields(
   replacements: Replacement[],
 ): unknown {
   if (typeof value === 'string') {
-    const placeholder = `__UNIRISE_LITERAL_${String(replacements.length).padStart(3, '0')}__`;
+    const placeholder = `__UNIRISE_LITERAL_${replacements.length}__`;
     replacements.push({ placeholder, value });
     return placeholder;
   }
@@ -79,7 +90,7 @@ function protectedPayload(source: CanonicalSource) {
   return {
     payload: {
       kind: payload.kind,
-      text: replaceTechnicalTokens(payload.text, replacements),
+      text: protectTextLiterals(payload.text, replacements),
       literals: protectLiteralFields(payload.literals, replacements),
     },
     replacements,
@@ -126,7 +137,55 @@ function restoreProtectedPayload(value: unknown, replacements: Replacement[]) {
 }
 
 function systemPrompt(resourceType: CanonicalSource['resourceType']) {
-  return `You translate Unirise website ${resourceType} content from Traditional Chinese into natural English. Return exactly one JSON object and nothing else: no Markdown, explanation, or code fence. The object must retain the exact source schema, keys, array lengths, kind, and every __UNIRISE_LITERAL_NNN__ placeholder exactly once. Translate only reader-facing prose to English; never invent product specifications, commitments, URLs, contact details, or identifiers.`;
+  return `You translate Unirise website ${resourceType} content from Traditional Chinese into natural English. Return exactly one JSON object and nothing else: no Markdown, explanation, or code fence. The object must retain the exact source schema, keys, array lengths, kind, and every __UNIRISE_LITERAL_number__ placeholder exactly once. Translate only reader-facing prose to English; never invent product specifications, commitments, URLs, contact details, or identifiers.`;
+}
+
+type JsonSchema = Record<string, unknown>;
+
+function schemaFor(value: unknown, path: string[] = []): JsonSchema {
+  if (value === null) return { type: 'null' };
+  if (typeof value === 'string')
+    return path.at(-1) === 'kind'
+      ? { type: 'string', enum: [value] }
+      : { type: 'string' };
+  if (Array.isArray(value)) {
+    const itemSchemas = Array.from(
+      new Map(
+        value.map((item) => {
+          const schema = schemaFor(item, path);
+          return [JSON.stringify(schema), schema] as const;
+        }),
+      ).values(),
+    );
+    return {
+      type: 'array',
+      items:
+        itemSchemas.length === 1
+          ? itemSchemas[0]
+          : { anyOf: itemSchemas.length ? itemSchemas : [{}] },
+    };
+  }
+  if (!value || typeof value !== 'object') return {};
+  const properties = Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      schemaFor(item, [...path, key]),
+    ]),
+  );
+  return {
+    type: 'object',
+    properties,
+    required: Object.keys(properties),
+    additionalProperties: false,
+  };
+}
+
+function translationSchema(source: CanonicalSource) {
+  return {
+    name: `unirise_${source.resourceType}_translation`,
+    strict: true,
+    schema: schemaFor(source.payload),
+  };
 }
 
 function responseContent(value: unknown) {
@@ -140,6 +199,20 @@ function responseContent(value: unknown) {
   } catch {
     throw new GroqTranslationError('translation_output_invalid');
   }
+}
+
+async function readJsonWithDeadline(response: Response, signal: AbortSignal) {
+  if (signal.aborted) throw new GroqTranslationError('translation_timeout');
+  return new Promise<unknown>((resolve, reject) => {
+    const abort = () => reject(new GroqTranslationError('translation_timeout'));
+    signal.addEventListener('abort', abort, { once: true });
+    response
+      .json()
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener('abort', abort);
+      });
+  });
 }
 
 export async function translateWithGroq(
@@ -169,7 +242,10 @@ export async function translateWithGroq(
         model: GROQ_MODEL,
         temperature: 0,
         max_tokens: MAX_TOKENS,
-        response_format: { type: 'json_object' },
+        response_format: {
+          type: 'json_schema',
+          json_schema: translationSchema(source),
+        },
         messages: [
           { role: 'system', content: systemPrompt(source.resourceType) },
           {
@@ -180,28 +256,35 @@ export async function translateWithGroq(
       }),
     });
   } catch {
+    clearTimeout(timer);
     if (controller.signal.aborted)
       throw new GroqTranslationError('translation_timeout');
     throw new GroqTranslationError('translation_upstream_unavailable');
-  } finally {
-    clearTimeout(timer);
-  }
-  if (!upstream.ok)
-    throw new GroqTranslationError('translation_upstream_unavailable');
-  let parsed: unknown;
-  try {
-    parsed = responseContent(await upstream.json());
-  } catch (error) {
-    if (error instanceof GroqTranslationError) throw error;
-    throw new GroqTranslationError('translation_output_invalid');
   }
   try {
+    if (!upstream.ok)
+      throw new GroqTranslationError('translation_upstream_unavailable');
+    let parsed: unknown;
+    try {
+      parsed = responseContent(
+        await readJsonWithDeadline(upstream, controller.signal),
+      );
+    } catch (error) {
+      if (error instanceof GroqTranslationError) throw error;
+      if (controller.signal.aborted)
+        throw new GroqTranslationError('translation_timeout');
+      throw new GroqTranslationError('translation_output_invalid');
+    }
     return validateTranslationPayload(
       restoreProtectedPayload(parsed, protectedSource.replacements),
       source,
     );
   } catch (error) {
     if (error instanceof GroqTranslationError) throw error;
+    if (controller.signal.aborted)
+      throw new GroqTranslationError('translation_timeout');
     throw new GroqTranslationError('translation_output_invalid');
+  } finally {
+    clearTimeout(timer);
   }
 }
