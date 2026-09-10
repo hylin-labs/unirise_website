@@ -1,8 +1,8 @@
 import {
   PublicNewsRoute,
   type PublicInnerRouteProps,
-} from '../../components/public-inner-routes';
+} from '../../../components/public-inner-routes';
 
 export default function NewsPage(props: PublicInnerRouteProps) {
-  return PublicNewsRoute({ ...props, locale: 'zh-TW' });
+  return PublicNewsRoute({ ...props, locale: 'en' });
 }
