@@ -1,4 +1,5 @@
 import { uniriseSchema } from '../db/schema';
+import { englishSeedPayload } from './english-seed';
 import { initialPublicContent, PUBLIC_CONTENT_IDS } from './public-content';
 import {
   legacyDownloads,
@@ -16,6 +17,9 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
       )
       .bind(id, JSON.stringify(initialPublicContent[id]), 1, 'published')
       .run();
+    await seedEnglishTranslation(db, 'public_content', id, {
+      ...initialPublicContent[id],
+    });
   }
 
   await db
@@ -42,6 +46,19 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
         publishedAt,
       )
       .run();
+    await seedEnglishTranslation(db, 'news', post.id, {
+      kind: 'news',
+      text: {
+        title: post.title,
+        lead: post.lead,
+        highlights: post.highlights,
+      },
+      literals: {
+        legacyId: post.id,
+        imageUrl: post.image,
+        videoUrl: post.video ?? null,
+      },
+    });
   }
 
   for (const download of legacyDownloads) {
@@ -51,6 +68,11 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
       )
       .bind(download.id, download.id, download.title, 'published', publishedAt)
       .run();
+    await seedEnglishTranslation(db, 'download', download.id, {
+      kind: 'download',
+      text: { title: download.title },
+      literals: { legacyId: download.id },
+    });
   }
 
   for (const item of legacyKnowledge) {
@@ -68,5 +90,35 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
         publishedAt,
       )
       .run();
+    await seedEnglishTranslation(db, 'knowledge', item.id, {
+      kind: 'knowledge',
+      text: { title: item.title, body: item.content, tags: [] },
+      literals: { href: item.href },
+    });
   }
+}
+
+async function seedEnglishTranslation(
+  db: D1Database,
+  resourceType: 'news' | 'download' | 'knowledge' | 'public_content',
+  resourceId: string,
+  payload: import('./translation-types').TranslationPayload,
+) {
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO ${uniriseSchema.contentTranslations}
+       (id, resource_type, resource_id, locale, payload_json, status, source_version, origin, outdated, translated_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'en', ?, 'needs_review', 1, 'human', 0, ?, ?, ?)`,
+    )
+    .bind(
+      `seed-en-${resourceType}-${resourceId}`,
+      resourceType,
+      resourceId,
+      JSON.stringify(englishSeedPayload(payload)),
+      now,
+      now,
+      now,
+    )
+    .run();
 }
