@@ -10,27 +10,47 @@ export function PublicInquiryForm({
   inquiry: InquiryPayload;
   product: string;
 }) {
-  const [sent, setSent] = useState(false);
+  const [status, setStatus] = useState('');
+  const [sending, setSending] = useState(false);
   const { text, literals } = inquiry;
-  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
+  const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    if (sending) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const value = (name: string) => {
       const entry = form.get(name);
       return typeof entry === 'string' ? entry : '';
     };
-    const subject = `${text.subject}${value('product') || text.defaultSubject}`;
-    const body = [
-      `${text.emailName}${value('name')}`,
-      `${text.emailCompany}${value('company')}`,
-      `${text.emailPhone}${value('phone')}`,
-      `${text.emailEmail}${value('email')}`,
-      '',
-      text.emailMessage,
-      value('message'),
-    ].join('\n');
-    window.location.href = `${literals.emailUrl}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    setSent(true);
+    setSending(true);
+    setStatus('');
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType: 'quote',
+          name: value('name'),
+          company: value('company'),
+          phone: value('phone'),
+          email: value('email'),
+          topic: value('product'),
+          message: value('message'),
+          sourcePath: `${window.location.pathname}${window.location.search}`,
+        }),
+      });
+      const payload = (await response.json()) as { followUpDelayed?: boolean };
+      if (!response.ok) {
+        setStatus(response.status === 429 ? text.rateLimited : text.error);
+        return;
+      }
+      formElement.reset();
+      setStatus(payload.followUpDelayed ? text.delayed : text.sent);
+    } catch {
+      setStatus(text.error);
+    } finally {
+      setSending(false);
+    }
   };
   const invalid = (
     event: SyntheticEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -52,6 +72,7 @@ export function PublicInquiryForm({
     <form
       className="original-content-panel inquiry-panel inquiry-form"
       onSubmit={submit}
+      aria-busy={sending}
     >
       <h2>{product || text.heading}</h2>
       <p>{text.help}</p>
@@ -98,10 +119,14 @@ export function PublicInquiryForm({
           {...validation}
         />
       </label>
-      <button className="original-inquiry-button" type="submit">
-        {text.submit}
+      <button className="original-inquiry-button" type="submit" disabled={sending}>
+        {sending ? text.sending : text.submit}
       </button>
-      {sent && <small className="form-status">{text.sent}</small>}
+      {status && (
+        <small className="form-status" aria-live="polite">
+          {status}
+        </small>
+      )}
       <small>
         {text.servicePhone}：{literals.phone}　｜　{literals.email}
       </small>

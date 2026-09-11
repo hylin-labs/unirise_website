@@ -35,6 +35,18 @@ export type LeadNotification = {
 
 export type LeadMailer = (notification: LeadNotification) => Promise<void>;
 
+export type LeadConfirmation = {
+  to: string;
+  name: string;
+  requestType: LeadInput['requestType'];
+  topic?: string;
+  locale: Locale;
+};
+
+export type LeadConfirmationMailer = (
+  confirmation: LeadConfirmation,
+) => Promise<void>;
+
 type NormalizedLead = Required<
   Pick<LeadInput, 'requestType' | 'name' | 'email' | 'message'>
 > &
@@ -167,7 +179,11 @@ export async function createChatLead(
   context: LeadContextInput,
   mailer: LeadMailer,
   hashPepper: string,
-): Promise<{ id: string; emailDelivered: boolean }> {
+): Promise<{
+  id: string;
+  emailDelivered: boolean;
+  confirmation: LeadConfirmation;
+}> {
   const lead = normalizeLead(input);
   const { sourcePath, visitorIdentifier, locale } =
     normalizeLeadContext(context);
@@ -238,7 +254,17 @@ export async function createChatLead(
   try {
     await mailer(notificationFor(lead));
   } catch {
-    return { id, emailDelivered: false };
+    return {
+      id,
+      emailDelivered: false,
+      confirmation: {
+        to: lead.email,
+        name: lead.name,
+        requestType: lead.requestType,
+        topic: lead.topic,
+        locale,
+      },
+    };
   }
 
   const deliveredAt = new Date().toISOString();
@@ -253,5 +279,15 @@ export async function createChatLead(
   } catch {
     // Delivery succeeded; a tracking outage must not request duplicate mail.
   }
-  return { id, emailDelivered: true };
+  return {
+    id,
+    emailDelivered: true,
+    confirmation: {
+      to: lead.email,
+      name: lead.name,
+      requestType: lead.requestType,
+      topic: lead.topic,
+      locale,
+    },
+  };
 }

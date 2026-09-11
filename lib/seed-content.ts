@@ -107,6 +107,75 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
       literals: { href: item.href },
     });
   }
+  await refreshInquiryCopy(db);
+}
+
+const previousInquiryHelp =
+  '填寫下列表單後，系統會開啟您的郵件程式並建立一封寄給合軒科技的詢問信。';
+const previousInquiryHelpEnglish =
+  'Complete the form below to open your email program with an enquiry addressed to Unirise Technology.';
+
+type StoredPublicPayload = {
+  text?: Record<string, unknown>;
+};
+
+function parseStoredPublicPayload(value: string): StoredPublicPayload | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as StoredPublicPayload)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshInquiryCopy(db: D1Database) {
+  const inquiry = initialPublicContent.inquiry;
+  const fields = ['help', 'submit', 'sending', 'sent', 'delayed', 'error', 'rateLimited'] as const;
+  const stored = await db
+    .prepare(
+      `SELECT payload_json FROM ${uniriseSchema.publicContent} WHERE id = ? LIMIT 1`,
+    )
+    .bind('inquiry')
+    .first<{ payload_json: string }>();
+  const payload = stored && parseStoredPublicPayload(stored.payload_json);
+  if (payload?.text?.help === previousInquiryHelp) {
+    const text = { ...payload.text };
+    for (const field of fields) text[field] = inquiry.text[field];
+    await db
+      .prepare(
+        `UPDATE ${uniriseSchema.publicContent} SET payload_json = ? WHERE id = ?`,
+      )
+      .bind(JSON.stringify({ ...payload, text }), 'inquiry')
+      .run();
+  }
+
+  const translated = englishSeedPayload(inquiry);
+  if (translated.kind !== 'inquiry') return;
+  const english = await db
+    .prepare(
+      `SELECT id, payload_json FROM ${uniriseSchema.contentTranslations}
+       WHERE resource_type = ? AND resource_id = ? AND locale = ? LIMIT 1`,
+    )
+    .bind('public_content', 'inquiry', 'en')
+    .first<{ id: string; payload_json: string }>();
+  const englishPayload =
+    english && parseStoredPublicPayload(english.payload_json);
+  if (english && englishPayload?.text?.help === previousInquiryHelpEnglish) {
+    const text = { ...englishPayload.text };
+    for (const field of fields) text[field] = translated.text[field];
+    await db
+      .prepare(
+        `UPDATE ${uniriseSchema.contentTranslations} SET payload_json = ?, updated_at = ? WHERE id = ?`,
+      )
+      .bind(
+        JSON.stringify({ ...englishPayload, text }),
+        new Date().toISOString(),
+        english.id,
+      )
+      .run();
+  }
 }
 
 async function seedEnglishTranslation(

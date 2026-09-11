@@ -379,6 +379,23 @@
   color: #666;
   font-size: 14px;
 }
+.leadStatus {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 0;
+  color: #555;
+  font-size: 13px;
+  font-weight: 700;
+}
+.leadStatus select {
+  max-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+}
 .ranking {
   margin: 0;
   padding: 0;

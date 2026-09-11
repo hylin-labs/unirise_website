@@ -5,7 +5,7 @@ import {
   isLeadSubmissionRequestAllowed,
   type LeadNotification,
 } from '../lib/lead-service';
-import { sendLeadNotification } from '../lib/resend';
+import { sendLeadConfirmation, sendLeadNotification } from '../lib/resend';
 
 vi.mock('cloudflare:workers', () => ({ env: {} }));
 
@@ -622,6 +622,34 @@ describe('Resend lead delivery', () => {
       to: ['hungyu@gmail.com'],
       reply_to: 'buyer@example.com',
       text: 'Lead details only',
+    });
+  });
+
+  it('sends a customer confirmation with the submitted enquiry language', async () => {
+    let request: RequestInit | undefined;
+    await sendLeadConfirmation(
+      {
+        to: 'buyer@example.com',
+        name: 'Lin',
+        requestType: 'quote',
+        topic: 'X-ray inspection',
+        locale: 'en',
+      },
+      {
+        apiKey: 'resend-secret',
+        fromEmail: 'leads@unirise.tw',
+        fetch: async (_input, init) => {
+          request = init;
+          return new Response(null, { status: 202 });
+        },
+      },
+    );
+
+    if (typeof request?.body !== 'string')
+      throw new Error('Expected a JSON string request body');
+    expect(JSON.parse(request.body)).toMatchObject({
+      to: ['buyer@example.com'],
+      subject: 'We received your Unirise enquiry',
     });
   });
 });

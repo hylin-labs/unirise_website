@@ -63,6 +63,12 @@ function Empty({ children }: { children: string }) {
   return <p className={styles.empty}>{children}</p>;
 }
 
+const leadStatusLabels = {
+  new: '新詢問',
+  contacted: '已聯絡',
+  closed: '已結案',
+} as const;
+
 export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
   const [view, setView] = useState<View>('overview');
   const [range, setRange] = useState(initialRange);
@@ -129,6 +135,29 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
       await load();
     } catch {
       setError('無法更新發布狀態，請稍後再試。');
+    } finally {
+      setUpdating('');
+    }
+  }
+
+  async function setLeadStatus(
+    id: string,
+    status: keyof typeof leadStatusLabels,
+  ) {
+    const operation = `lead:${id}`;
+    setUpdating(operation);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/leads', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status }),
+      });
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('lead_update_failed');
+      await load();
+    } catch {
+      setError('無法更新客戶詢問狀態，請稍後再試。');
     } finally {
       setUpdating('');
     }
@@ -710,6 +739,28 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                       <a href={`tel:${lead.phone}`}>{lead.phone}</a>
                     ) : null}
                     <p>{lead.message}</p>
+                    <label className={styles.leadStatus}>
+                      處理狀態
+                      <select
+                        value={lead.status}
+                        disabled={updating === `lead:${lead.id}`}
+                        onChange={(event) =>
+                          void setLeadStatus(
+                            lead.id,
+                            event.currentTarget
+                              .value as keyof typeof leadStatusLabels,
+                          )
+                        }
+                      >
+                        {Object.entries(leadStatusLabels).map(
+                          ([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
                     <small>
                       來源：{lead.sourcePath} · 狀態：{lead.status} · Email{' '}
                       {lead.emailDelivered ? '已送出' : '待處理'}

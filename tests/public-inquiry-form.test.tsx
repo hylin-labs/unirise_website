@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PublicInquiryForm } from '../components/public-inquiry-form';
 import { initialPublicContent } from '../lib/public-content';
 
-describe('localized inquiry email workflow', () => {
+describe('localized inquiry workflow', () => {
   let root: Root;
   let container: HTMLDivElement;
   beforeEach(() => {
@@ -22,18 +22,11 @@ describe('localized inquiry email workflow', () => {
   });
 
   for (const locale of ['zh-TW', 'en'] as const)
-    it(`creates the existing mailto inquiry in ${locale}`, async () => {
+    it(`submits an enquiry directly in ${locale}`, async () => {
       const inquiry = structuredClone(initialPublicContent.inquiry);
       if (locale === 'en')
         Object.assign(inquiry.text, {
-          subject: 'Product inquiry: ',
-          defaultSubject: 'Product information',
-          emailName: 'Name: ',
-          emailCompany: 'Company: ',
-          emailPhone: 'Phone: ',
-          emailEmail: 'Email: ',
-          emailMessage: 'Requirements:',
-          sent: 'Inquiry email created.',
+          sent: 'Your enquiry was received.',
         });
       await act(async () =>
         root.render(
@@ -53,8 +46,20 @@ describe('localized inquiry email workflow', () => {
         >(`[name="${name}"]`)!;
         field.value = value;
       }
-      const location = { href: '' };
-      vi.stubGlobal('window', { location });
+      let requestOptions: RequestInit | undefined;
+      const fetchStub = vi.fn(
+        async (_input: RequestInfo | URL, init?: RequestInit) => {
+          requestOptions = init;
+          return new Response(
+            JSON.stringify({ accepted: true, followUpDelayed: false }),
+            {
+              status: 201,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        },
+      );
+      vi.stubGlobal('fetch', fetchStub);
       await act(async () =>
         container
           .querySelector('form')!
@@ -62,17 +67,15 @@ describe('localized inquiry email workflow', () => {
             new Event('submit', { bubbles: true, cancelable: true }),
           ),
       );
-      const url = new URL(location.href);
-      expect(url.protocol).toBe('mailto:');
-      expect(url.pathname).toBe('info-unirise@unirise.tw');
-      expect(url.searchParams.get('subject')).toBe(
-        locale === 'en'
-          ? 'Product inquiry: FSCAN-4350G & XAVIS'
-          : '詢問產品：FSCAN-4350G & XAVIS',
+      expect(fetchStub).toHaveBeenCalledWith(
+        '/api/leads',
+        expect.objectContaining({ method: 'POST' }),
       );
-      const body = url.searchParams.get('body')!;
-      for (const value of Object.values(values)) expect(body).toContain(value);
-      expect(body).toContain(locale === 'en' ? 'Requirements:' : '需求說明：');
+      expect(JSON.parse(requestOptions?.body as string)).toMatchObject({
+        requestType: 'quote',
+        topic: 'FSCAN-4350G & XAVIS',
+        ...values,
+      });
       expect(container.querySelector('.form-status')?.textContent).toBe(
         inquiry.text.sent,
       );

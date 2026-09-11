@@ -3,10 +3,14 @@ import {
   createChatLead,
   isLeadSubmissionRequestAllowed,
   normalizeLeadContext,
+  type LeadConfirmationMailer,
   type LeadInput,
   type LeadMailer,
 } from '../../../lib/lead-service';
-import { sendLeadNotification } from '../../../lib/resend';
+import {
+  sendLeadConfirmation,
+  sendLeadNotification,
+} from '../../../lib/resend';
 import {
   RequestTooLargeError,
   readLimitedRequestBody,
@@ -15,6 +19,7 @@ import {
 type LeadsHandlerOptions = {
   db: D1Database;
   mailer: LeadMailer;
+  confirmationMailer?: LeadConfirmationMailer;
   isRequestAllowed?: typeof isLeadSubmissionRequestAllowed;
   analyticsHashPepper?: string;
 };
@@ -31,6 +36,7 @@ function errorResponse(error: string, status: number) {
 export function createLeadsHandler({
   db,
   mailer,
+  confirmationMailer,
   isRequestAllowed = isLeadSubmissionRequestAllowed,
   analyticsHashPepper = '',
 }: LeadsHandlerOptions) {
@@ -76,6 +82,13 @@ export function createLeadsHandler({
         mailer,
         analyticsHashPepper,
       );
+      if (confirmationMailer) {
+        try {
+          await confirmationMailer(result.confirmation);
+        } catch (error) {
+          console.error('Lead confirmation delivery failed', error);
+        }
+      }
       return Response.json(
         { accepted: true, followUpDelayed: !result.emailDelivered },
         { status: 201, headers: { 'Cache-Control': 'no-store' } },
@@ -101,6 +114,11 @@ export async function POST(request: Request) {
     db: runtime.DB,
     mailer: (notification) =>
       sendLeadNotification(notification, {
+        apiKey: runtime.RESEND_API_KEY,
+        fromEmail: runtime.RESEND_FROM_EMAIL,
+      }),
+    confirmationMailer: (confirmation) =>
+      sendLeadConfirmation(confirmation, {
         apiKey: runtime.RESEND_API_KEY,
         fromEmail: runtime.RESEND_FROM_EMAIL,
       }),
