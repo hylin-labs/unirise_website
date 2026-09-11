@@ -1,0 +1,2 @@
+# Cloudflare D1 parses trigger-containing migrations only with LF line endings.
+drizzle/*.sql text eol=lf
