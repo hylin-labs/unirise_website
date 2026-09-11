@@ -1,6 +1,6 @@
 import { DEFAULT_LOCALE, type Locale } from './locales';
 
-const PUBLIC_PATHS = ['/', '/catalog', '/news', '/downloads', '/contact', '/inquiry'] as const;
+import { PUBLIC_PATHS } from './public-route-inventory.mjs';
 
 export type PublicPath = (typeof PUBLIC_PATHS)[number];
 
@@ -9,7 +9,11 @@ function isPublicPath(pathname: string): pathname is PublicPath {
 }
 
 function localePrefix(locale: Locale, pathname: PublicPath): string {
-  return locale === 'en' ? (pathname === '/' ? '/en' : `/en${pathname}`) : pathname;
+  return locale === 'en'
+    ? pathname === '/'
+      ? '/en'
+      : `/en${pathname}`
+    : pathname;
 }
 
 function safeSuffix(value: string, prefix: '?' | '#'): string {
@@ -30,7 +34,9 @@ export function publicPathWithoutLocale(pathname: string): PublicPath | null {
 export function localeFromPathname(pathname: string): Locale | null {
   const publicPath = publicPathWithoutLocale(pathname);
   if (!publicPath) return null;
-  return pathname === '/en' || pathname.startsWith('/en/') ? 'en' : DEFAULT_LOCALE;
+  return pathname === '/en' || pathname.startsWith('/en/')
+    ? 'en'
+    : DEFAULT_LOCALE;
 }
 
 export function localizedPath(
@@ -43,8 +49,17 @@ export function localizedPath(
   return `${localePrefix(locale, publicPath)}${safeSuffix(search, '?')}${safeSuffix(hash, '#')}`;
 }
 
-export function alternateLocalePath(pathname: string, search = '', hash = ''): string {
+export function alternateLocalePath(
+  pathname: string,
+  search = '',
+  hash = '',
+): string {
   const locale = localeFromPathname(pathname);
   if (!locale) return localizedPath(DEFAULT_LOCALE, '/', search, hash);
-  return localizedPath(locale === 'en' ? DEFAULT_LOCALE : 'en', pathname, search, hash);
+  return localizedPath(
+    locale === 'en' ? DEFAULT_LOCALE : 'en',
+    pathname,
+    search,
+    hash,
+  );
 }

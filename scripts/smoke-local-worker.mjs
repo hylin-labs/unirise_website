@@ -207,6 +207,7 @@ try {
     '0000_add_visitor_statistics.sql',
     '0001_add_chat_rate_limits.sql',
     '0002_add_admin_content_leads_analytics.sql',
+    '0003_add_bilingual_content.sql',
   ]) {
     await run(node, [
       wrangler,

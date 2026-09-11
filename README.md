@@ -25,6 +25,16 @@
 
 English translation is initiated by an administrator from `/admin`. Each Worker invocation processes one durable job item, so the administrator interface can poll until the job finishes. Groq failures are recorded as safe error codes on the individual item; retry a selected failed item from `/admin`, or start a new selected job after its Chinese source changes. Groq access is never exposed in the browser. The existing server-only `GROQ_API_KEY` powers both the test chatbot and these English drafts.
 
+Open **英文翻譯** in the administrator sidebar, start the untranslated/outdated batch, and keep processing/resuming its saved job until every item is terminal. Review failed items and retry them individually. Preview and edit each English record, then mark reviewed content published; unpublish it to make it private. AI records marked `needs_review` are already public immediately, including English chatbot knowledge whose Chinese source is published. `draft` English knowledge never enters English retrieval, and missing English knowledge never falls back to Chinese in chat. Public pages may retain Chinese content until their English translation is available.
+
+Chinese source edits flag older English for review without replacing human edits. Check source-version warnings before approving English. Do not call a rollout complete while its translation batch has pending or failed items. The analytics overview compares both languages and the chat-gap list labels each unanswered question's language.
+
+## Bilingual release checks
+
+Run `npm test`, `npm run lint`, `npm run build`, `git diff --check`, `npm run test:local-worker-smoke`, then `node scripts/smoke-bilingual-local-worker.mjs`, in that order. The shared `lib/public-route-inventory.mjs` supplies public route families for routing, sitemap expectations, and smoke coverage. The bilingual smoke follows rendered catalog/query links and checks original local assets. It uses a temporary copy of the built Worker, temporary sentinel configuration, migrations through `0003`, and isolated local D1; Groq responses are mocked and other outbound Worker fetches are blocked. Cleanup removes only that temporary workspace. It never reads the root `.dev.vars` or applies remote migrations.
+
+Before publishing, manually check desktop/mobile menus, carousel, language switching with query and anchor, news/download details, inquiry forms, source links, visitor labels, and the translation manager. Automated route checks do not establish pixel-level visual parity. A verified Resend sender is a separate, pre-existing production prerequisite; successful local bilingual tests do not prove email delivery.
+
 ## Required checks for this feature
 
 The following checks are green for the admin, lead, and analytics feature:

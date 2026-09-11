@@ -609,3 +609,20 @@
 .hiddenFilters {
   display: none;
 }
+.localeTable {
+  overflow-x: auto;
+}
+.localeTable table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.localeTable th,
+.localeTable td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.gapList small {
+  display: block;
+  margin-top: 6px;
+}

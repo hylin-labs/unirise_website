@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { Locale } from './locales';
+import { bilingualRouteInventory } from './public-route-inventory.mjs';
 import {
   localizedPath,
   publicPathWithoutLocale,
@@ -7,16 +8,11 @@ import {
 } from './localized-route';
 
 const FALLBACK_SITE_ORIGIN = 'https://unirise.craniai.chatgpt.site';
-const publicPaths: readonly PublicPath[] = [
-  '/',
-  '/catalog',
-  '/news',
-  '/downloads',
-  '/contact',
-  '/inquiry',
-];
 
-const pageCopy: Record<Locale, Record<PublicPath, { title: string; description: string }>> = {
+const pageCopy: Record<
+  Locale,
+  Record<PublicPath, { title: string; description: string }>
+> = {
   'zh-TW': {
     '/': {
       title: '合軒科技有限公司 | Unirise Technology Inc.',
@@ -24,7 +20,8 @@ const pageCopy: Record<Locale, Record<PublicPath, { title: string; description: 
     },
     '/catalog': {
       title: '產品目錄 | 合軒科技有限公司',
-      description: '瀏覽合軒科技的食品分選、X光檢測、回收再生與塑膠化工產品目錄。',
+      description:
+        '瀏覽合軒科技的食品分選、X光檢測、回收再生與塑膠化工產品目錄。',
     },
     '/news': {
       title: '最新消息 | 合軒科技有限公司',
@@ -106,7 +103,9 @@ function safeLegacyId(value: string | null) {
  */
 export function canonicalSearch(pathname: string, search = '') {
   const path = publicPathWithoutLocale(pathname) ?? '/';
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : '');
+  const params = new URLSearchParams(
+    search.startsWith('?') ? search.slice(1) : '',
+  );
   const id = safeLegacyId(params.get('id'));
 
   if ((path === '/news' || path === '/downloads') && id) return `?id=${id}`;
@@ -130,17 +129,16 @@ export function metadataSearchFromParams(
     return `?id=${id}`;
   if (path === '/catalog') {
     const type = first(params.type);
-    if (
-      (type === 'industry' || type === 'brand') &&
-      safeLegacyId(id ?? null)
-    )
+    if ((type === 'industry' || type === 'brand') && safeLegacyId(id ?? null))
       return `?type=${type}&id=${id}`;
   }
   return '';
 }
 
 function localizedUrl(locale: Locale, pathname: string, search = '') {
-  return absoluteUrl(localizedPath(locale, pathname, canonicalSearch(pathname, search)));
+  return absoluteUrl(
+    localizedPath(locale, pathname, canonicalSearch(pathname, search)),
+  );
 }
 
 export function localizedPageMetadata(
@@ -179,25 +177,17 @@ export function localizedPageMetadata(
   };
 }
 
-export type SitemapInput = { newsIds: readonly string[]; downloadIds: readonly string[] };
+export type SitemapInput = {
+  newsIds: readonly string[];
+  downloadIds: readonly string[];
+};
 
 /** Build a stable public-only sitemap inventory from published legacy IDs. */
 export function localizedSitemapEntries({
   newsIds,
   downloadIds,
 }: SitemapInput): Array<{ url: string }> {
-  const urls = new Set<string>();
-  const add = (locale: Locale, path: PublicPath, search = '') =>
-    urls.add(localizedUrl(locale, path, search));
-
-  for (const locale of ['zh-TW', 'en'] as const) {
-    for (const path of publicPaths) add(locale, path);
-    for (const id of [...newsIds].filter((value) => safeLegacyId(value)).sort())
-      add(locale, '/news', `?id=${id}`);
-    for (const id of [...downloadIds]
-      .filter((value) => safeLegacyId(value))
-      .sort())
-      add(locale, '/downloads', `?id=${id}`);
-  }
-  return [...urls].map((url) => ({ url }));
+  return bilingualRouteInventory({ newsIds, downloadIds }).map((path) => ({
+    url: absoluteUrl(path),
+  }));
 }

@@ -315,6 +315,41 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                 );
               })}
             </div>
+            <article className={styles.panel}>
+              <h2>語系成效比較</h2>
+              <p className={styles.panelIntro}>
+                同一訪客可瀏覽兩種語系，因此各語系訪客數相加可能高於總訪客數。
+              </p>
+              <div className={styles.localeTable}>
+                <table aria-label="語系成效比較">
+                  <thead>
+                    <tr>
+                      <th scope="col">指標</th>
+                      <th scope="col">繁體中文</th>
+                      <th scope="col">English</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metricCards.map((card) => (
+                      <tr key={card.key}>
+                        <th scope="row">{card.label}</th>
+                        {(['zh-TW', 'en'] as const).map((locale) => {
+                          const value =
+                            snapshot.byLocale[locale].metrics[card.key];
+                          return (
+                            <td key={locale}>
+                              {card.percent
+                                ? `${(value * 100).toFixed(1)}%`
+                                : new Intl.NumberFormat('zh-TW').format(value)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
             <div className={styles.splitPanels}>
               <article className={styles.panel}>
                 <h2>最多瀏覽頁面</h2>
@@ -702,6 +737,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                 {snapshot.unansweredQuestions.map((question) => (
                   <article key={question.id}>
                     <time>{formatDate(question.createdAt)}</time>
+                    <small>
+                      語系：{question.locale === 'en' ? 'English' : '繁體中文'}
+                    </small>
                     <p>{question.question}</p>
                   </article>
                 ))}
