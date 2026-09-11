@@ -22,12 +22,14 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
     });
   }
 
-  await db
-    .prepare(
-      `INSERT OR IGNORE INTO ${uniriseSchema.adminUsers} (id, email, role, enabled) VALUES (?, ?, ?, ?)`,
-    )
-    .bind('hungyu@gmail.com', 'hungyu@gmail.com', 'admin', 1)
-    .run();
+  for (const email of ['hungyu@gmail.com', 'hungyu@craniai.com']) {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO ${uniriseSchema.adminUsers} (id, email, role, enabled) VALUES (?, ?, ?, ?)`,
+      )
+      .bind(email, email, 'admin', 1)
+      .run();
+  }
 
   for (const post of legacyNewsPosts) {
     await db
