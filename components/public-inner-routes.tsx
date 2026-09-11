@@ -16,6 +16,7 @@ import type {
 } from '../lib/translation-types';
 import { PublicInnerPage } from './public-inner-page';
 import { PublicInquiryForm } from './public-inquiry-form';
+import { SolutionFinder } from './solution-finder';
 
 /* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- Preserve the original catalog, news, downloads, and contact markup and native links. */
 
@@ -447,6 +448,7 @@ export async function PublicInquiryRoute({
       eyebrow={inquiry.text.eyebrow}
       breadcrumbs={[{ label: inquiry.text.title }]}
     >
+      <SolutionFinder locale={locale} />
       <PublicInquiryForm key={product} inquiry={inquiry} product={product} />
     </PublicInnerPage>
   );

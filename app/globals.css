@@ -1526,6 +1526,100 @@ a {
   background: #fff;
   color: var(--original-red);
 }
+.solution-finder {
+  margin: 0 auto 34px;
+  padding: 28px;
+  border-top: 4px solid var(--original-red);
+  background: #f1f3f6;
+}
+.solution-finder-intro {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+.solution-finder-intro > span {
+  padding-top: 2px;
+  color: var(--original-red);
+  font: 700 32px/1 Arial, sans-serif;
+}
+.solution-finder h2 {
+  margin: 0;
+  color: var(--original-ink);
+  font-size: 26px;
+  font-weight: 500;
+}
+.solution-finder p {
+  margin: 8px 0 0;
+  color: #5b5b5b;
+  line-height: 1.7;
+}
+.solution-finder-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.solution-finder label {
+  display: grid;
+  gap: 7px;
+  color: #414042;
+  font-size: 14px;
+  font-weight: 700;
+}
+.solution-finder select {
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid #b9bec4;
+  border-radius: 0;
+  background: #fff;
+  color: #414042;
+  font: inherit;
+}
+.solution-finder-result {
+  margin-top: 22px;
+  padding: 22px;
+  border-left: 4px solid var(--original-red);
+  background: #fff;
+}
+.solution-finder-result > span {
+  color: var(--original-red);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.solution-finder-result h3 {
+  margin: 8px 0 0;
+  color: var(--original-ink);
+  font-size: 22px;
+  font-weight: 500;
+}
+.solution-finder-result small {
+  display: block;
+  margin-top: 14px;
+  color: #666;
+  line-height: 1.6;
+}
+.solution-finder-result > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 18px;
+}
+.solution-finder-result > div > a:not(.original-inquiry-button) {
+  color: var(--original-red);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 680px) {
+  .solution-finder {
+    padding: 22px 18px;
+  }
+  .solution-finder-fields {
+    grid-template-columns: 1fr;
+  }
+}
 .original-agency {
   margin: 50px 0;
   padding-top: 28px;
