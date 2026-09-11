@@ -269,7 +269,7 @@ export async function verifyAdminPassword(
 ): Promise<(AdminIdentity & { sessionToken: string; expiresAt: string }) | null> {
   if (!pepper || !passwordHash)
     throw new Error('Admin password login is not configured');
-  if (typeof password !== 'string' || password.length < 8 || password.length > 512)
+  if (typeof password !== 'string' || password.length < 7 || password.length > 512)
     return null;
 
   const user = await db

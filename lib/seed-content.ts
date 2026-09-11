@@ -22,7 +22,7 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
     });
   }
 
-  for (const email of ['hungyu@gmail.com', 'hungyu@craniai.com']) {
+  for (const email of ['hungyu@gmail.com']) {
     await db
       .prepare(
         `INSERT OR IGNORE INTO ${uniriseSchema.adminUsers} (id, email, role, enabled) VALUES (?, ?, ?, ?)`,
@@ -30,6 +30,15 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
       .bind(email, email, 'admin', 1)
       .run();
   }
+
+  // This is the only active administrator account. Keep an existing legacy
+  // account in the audit trail, but prevent it from creating new sessions.
+  await db
+    .prepare(
+      `UPDATE ${uniriseSchema.adminUsers} SET enabled = 0 WHERE email = ?`,
+    )
+    .bind('hungyu@craniai.com')
+    .run();
 
   for (const post of legacyNewsPosts) {
     await db
