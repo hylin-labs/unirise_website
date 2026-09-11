@@ -259,6 +259,52 @@ export async function verifyAdminCode(
   return { id: row.admin_id, email: row.email, role, sessionToken, expiresAt };
 }
 
+/** Verifies the shared administrator password without storing it in D1. */
+export async function verifyAdminPassword(
+  db: D1Database,
+  email: string,
+  password: string,
+  passwordHash: string,
+  pepper: string,
+): Promise<(AdminIdentity & { sessionToken: string; expiresAt: string }) | null> {
+  if (!pepper || !passwordHash)
+    throw new Error('Admin password login is not configured');
+  if (typeof password !== 'string' || password.length < 8 || password.length > 512)
+    return null;
+
+  const user = await db
+    .prepare(
+      `SELECT id, email, role FROM ${uniriseSchema.adminUsers} WHERE email = ? AND enabled = 1 LIMIT 1`,
+    )
+    .bind(normalizeEmail(email))
+    .first<{ id: string; email: string; role: string }>();
+  const role = user && safeRole(user.role);
+  if (!user || !role) return null;
+
+  const candidate = await keyedHash(
+    pepper,
+    `${APPLICATION_HASH_CONTEXT}:password:${password}`,
+  );
+  if (!equalHashes(candidate, passwordHash)) return null;
+
+  const sessionToken = randomToken();
+  const expiresAt = new Date(Date.now() + SESSION_LIFETIME_MS).toISOString();
+  await db
+    .prepare(
+      `INSERT INTO ${uniriseSchema.adminSessions} (id, admin_user_id, token_hash, expires_at, revoked_at, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      user.id,
+      await hashSessionToken(sessionToken),
+      expiresAt,
+      null,
+      new Date().toISOString(),
+    )
+    .run();
+  return { id: user.id, email: user.email, role, sessionToken, expiresAt };
+}
+
 export function createAdminSessionCookie(sessionToken: string) {
   return `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(sessionToken)}; Path=/; Max-Age=${SESSION_LIFETIME_MS / 1000}; HttpOnly; Secure; SameSite=Lax`;
 }

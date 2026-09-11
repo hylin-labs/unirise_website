@@ -20,7 +20,7 @@ export default function AdminLoginPage() {
         </Link>
         <p className={styles.eyebrow}>UNIRISE ADMINISTRATION</p>
         <h1 id="admin-login-title">管理後台登入</h1>
-        <p className={styles.intro}>使用獲授權的公司信箱取得一次性登入碼。</p>
+        <p className={styles.intro}>使用獲授權的管理員信箱與密碼登入。</p>
         <AdminLoginForm />
         <Link className={styles.backLink} href="/">
           ← 返回公開網站
