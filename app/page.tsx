@@ -1,12 +1,16 @@
 import { env } from 'cloudflare:workers';
+import type { Metadata } from 'next';
 import { PublicHome } from '../components/public-home';
 import { listPublishedNewsForLocale } from '../lib/content-repository';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
+import { localizedPageMetadata } from '../lib/locale-seo';
 import { getLocalizedContent } from '../lib/translation-repository';
 import type { ChromePayload, HomePayload } from '../lib/translation-types';
 
 type PublicHomeRouteProps = { locale: Locale };
+
+export const metadata: Metadata = localizedPageMetadata('zh-TW', '/');
 
 async function localizedPayload<T extends HomePayload | ChromePayload>(
   db: D1Database,
