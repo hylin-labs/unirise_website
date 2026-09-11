@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { AdminDashboard } from '../components/admin-dashboard';
 import {
   bilingualRouteInventory,
+  bilingualSitemapRouteInventory,
   PUBLIC_PATHS,
 } from '../lib/public-route-inventory.mjs';
 import { alternateLocalePath } from '../lib/localized-route';
@@ -14,9 +15,10 @@ import { localizedSitemapEntries, siteOrigin } from '../lib/locale-seo';
 
 afterEach(() => vi.unstubAllGlobals());
 
-it('uses one public inventory for reciprocal links and sitemap coverage', () => {
+it('uses one public inventory for route coverage while excluding non-indexable variants from the sitemap', () => {
   const inputs = { newsIds: ['3944'], downloadIds: ['3853'] };
   const routes = bilingualRouteInventory(inputs);
+  const sitemapRoutes = bilingualSitemapRouteInventory(inputs);
   const urls = localizedSitemapEntries(inputs).map(({ url }) => url);
   expect(PUBLIC_PATHS).toHaveLength(6);
   const publicFolders = readdirSync(resolve('app'), { withFileTypes: true })
@@ -41,14 +43,33 @@ it('uses one public inventory for reciprocal links and sitemap coverage', () => 
   for (const path of routes) {
     const url = new URL(path, siteOrigin);
     expect(url.origin).toBe(siteOrigin);
-    expect(urls).toContain(url.href);
-    const alternate = alternateLocalePath(url.pathname, url.search);
+    const alternate = alternateLocalePath(url.pathname, url.search, url.hash);
     const translated = new URL(alternate, siteOrigin);
     expect(translated.origin).toBe(siteOrigin);
-    expect(alternateLocalePath(translated.pathname, translated.search)).toBe(
-      path,
-    );
+    expect(
+      alternateLocalePath(
+        translated.pathname,
+        translated.search,
+        translated.hash,
+      ),
+    ).toBe(path);
   }
+  for (const path of sitemapRoutes)
+    expect(urls).toContain(new URL(path, siteOrigin).href);
+  for (const path of routes.filter((path) => !sitemapRoutes.includes(path)))
+    expect(urls).not.toContain(new URL(path, siteOrigin).href);
+
+  expect(routes).toEqual(
+    expect.arrayContaining([
+      '/#news',
+      '/en#brands',
+      '/catalog?type=industry&id=73',
+      '/en/catalog?type=brand&id=127',
+      '/inquiry?product=FSCAN-4350G%20%26%20XAVIS',
+      '/en/news?id=3944',
+      '/downloads?id=3853',
+    ]),
+  );
 });
 
 it('shows both locale metrics and the language of unanswered questions', async () => {

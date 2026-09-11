@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { Locale } from './locales';
-import { bilingualRouteInventory } from './public-route-inventory.mjs';
+import { bilingualSitemapRouteInventory } from './public-route-inventory.mjs';
 import {
   localizedPath,
   publicPathWithoutLocale,
@@ -187,7 +187,7 @@ export function localizedSitemapEntries({
   newsIds,
   downloadIds,
 }: SitemapInput): Array<{ url: string }> {
-  return bilingualRouteInventory({ newsIds, downloadIds }).map((path) => ({
-    url: absoluteUrl(path),
-  }));
+  return bilingualSitemapRouteInventory({ newsIds, downloadIds }).map(
+    (path) => ({ url: absoluteUrl(path) }),
+  );
 }

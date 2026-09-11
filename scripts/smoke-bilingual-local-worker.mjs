@@ -32,10 +32,19 @@ const children = new Set();
 let cleanupPromise;
 function cleanup() {
   return (cleanupPromise ??= (async () => {
-    await Promise.all(
-      [...children, ...(worker ? [worker] : [])].map(terminateChildTree),
+    const processes = [...new Set([...children, ...(worker ? [worker] : [])])];
+    const termination = await Promise.allSettled(
+      processes.map(terminateChildTree),
     );
-    await removeTemporaryArtifact(temporary);
+    const removal = await Promise.allSettled([removeTemporaryArtifact(temporary)]);
+    const failures = [...termination, ...removal]
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (failures.length)
+      throw new AggregateError(
+        failures,
+        'Bilingual smoke cleanup completed with failures.',
+      );
   })());
 }
 for (const signal of ['SIGINT', 'SIGTERM'])
@@ -51,6 +60,8 @@ const run = (args) =>
     onExit: (child) => children.delete(child),
   });
 
+let primaryFailure;
+let cleanupFailure;
 try {
   await cp(resolve(root, 'dist/server'), resolve(temporary, 'server'), {
     recursive: true,
@@ -250,6 +261,21 @@ export default { async fetch(request, env, context) {
   console.log(
     `Bilingual Worker smoke passed: ${paths.size} public routes, ${assets.size} local assets, locale rejection, missing-English fallback, mocked English chat sources.`,
   );
+} catch (error) {
+  primaryFailure = error;
 } finally {
-  await cleanup();
+  try {
+    await cleanup();
+  } catch (error) {
+    cleanupFailure = error;
+  }
 }
+if (primaryFailure) {
+  if (cleanupFailure)
+    console.error(
+      'Bilingual smoke cleanup failed after the primary failure:',
+      cleanupFailure,
+    );
+  throw primaryFailure;
+}
+if (cleanupFailure) throw cleanupFailure;
