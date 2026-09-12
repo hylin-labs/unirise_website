@@ -88,10 +88,17 @@ export function PublicHome({
         (current + amount + home.literals.agencyIds.length) %
         home.literals.agencyIds.length,
     );
-  const featuredNews = home.literals.newsIds.flatMap((legacyId) => {
-    const item = news.find((candidate) => candidate.legacyId === legacyId);
-    return item ? [item] : [];
-  });
+  // The home page should reflect administrator publications, rather than stay
+  // pinned to the original imported news IDs. The public repository already
+  // filters drafts; this stable sort keeps the four newest published items.
+  const featuredNews = [...news]
+    .sort((left, right) => {
+      const dateOrder = (right.publishedAt ?? '').localeCompare(
+        left.publishedAt ?? '',
+      );
+      return dateOrder || right.legacyId.localeCompare(left.legacyId);
+    })
+    .slice(0, home.literals.newsIds.length);
 
   return (
     <main id="top" className="original-home">

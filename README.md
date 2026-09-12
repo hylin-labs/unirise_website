@@ -12,14 +12,14 @@
 3. Build once to create the local Worker configuration at `dist/server/wrangler.json`: `npm run build`.
 4. For a clean local D1 database, apply every migration in order. The generated configuration names the local binding `DB` and local database `site-creator-d1`:
 
-   1. `npx wrangler d1 execute site-creator-d1 --local --config dist/server/wrangler.json --file drizzle/0000_add_visitor_statistics.sql`
-   2. `npx wrangler d1 execute site-creator-d1 --local --config dist/server/wrangler.json --file drizzle/0001_add_chat_rate_limits.sql`
-   3. `npx wrangler d1 execute site-creator-d1 --local --config dist/server/wrangler.json --file drizzle/0002_add_admin_content_leads_analytics.sql`
-   4. `npx wrangler d1 execute site-creator-d1 --local --config dist/server/wrangler.json --file drizzle/0003_add_bilingual_content.sql`
+   1. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0000_add_visitor_statistics.sql`
+   2. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0001_add_chat_rate_limits.sql`
+   3. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0002_add_admin_content_leads_analytics.sql`
+   4. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0003_add_bilingual_content.sql`
 
    Migration `0002` is schema-only. On the first Worker request, the idempotent runtime initializer creates the `hungyu@gmail.com` allowlist entry and imports the legacy public content. A new Worker isolate can run that safe initializer again; `INSERT OR IGNORE` keeps the resulting data stable.
 
-5. Start the local Worker with `npm run start`. The cross-platform Node wrapper resolves the repository-root `.dev.vars` path before it calls Wrangler, so it is not affected by the generated `dist/server/wrangler.json` location. Run `npm run dev` only for the Vite development server.
+5. Start the local Worker with `npm run start`. The cross-platform Node wrapper resolves the repository-root `.dev.vars` path and keeps local database state in `.wrangler/state`, so rebuilding does not erase local test content. Run `npm run dev` only for the Vite development server.
 
 ## Administrator English drafts
 

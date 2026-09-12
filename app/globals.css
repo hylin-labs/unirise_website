@@ -1612,12 +1612,125 @@ a {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.project-brief {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #d9dde2;
+}
+.project-brief strong,
+.contextual-inquiry-entry > span {
+  color: var(--original-red);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.project-brief p {
+  max-width: 680px;
+  margin: 7px 0 0;
+  font-size: 14px;
+}
+.project-brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+.project-brief-actions button {
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid #777b80;
+  background: #fff;
+  color: #414042;
+  cursor: pointer;
+  font: 500 14px/1.2 inherit;
+}
+.project-brief-actions button:hover,
+.project-brief-actions button:focus-visible {
+  border-color: var(--original-red);
+  color: var(--original-red);
+}
+.project-brief-actions .original-inquiry-button {
+  margin-top: 0;
+}
+.contextual-inquiry-entry {
+  margin-top: 30px;
+  padding: 26px 28px;
+  border-top: 4px solid var(--original-red);
+  background: #f1f3f6;
+}
+.contextual-inquiry-entry h2 {
+  margin: 8px 0 0;
+  color: var(--original-ink);
+  font-size: 24px;
+  font-weight: 500;
+}
+.contextual-inquiry-entry p {
+  max-width: 720px;
+  margin: 9px 0 0;
+  color: #5b5b5b;
+  line-height: 1.7;
+}
+.contextual-inquiry-entry .contextual-inquiry-topic {
+  color: #414042;
+  font-size: 14px;
+  font-weight: 700;
+}
+.contextual-inquiry-entry > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 18px;
+}
+.contextual-inquiry-entry > div > a:not(.original-inquiry-button) {
+  color: var(--original-red);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.contextual-inquiry-entry .original-inquiry-button {
+  margin-top: 0;
+}
+.contextual-inquiry-entry small {
+  display: block;
+  margin-top: 14px;
+  color: #666;
+  line-height: 1.6;
+}
+.inquiry-brief {
+  margin: 0 0 22px;
+  padding: 15px 17px;
+  border-left: 4px solid var(--original-red);
+  background: #f1f3f6;
+}
+.inquiry-brief strong {
+  color: var(--original-ink);
+}
+.inquiry-brief p {
+  margin: 7px 0 0;
+  color: #5b5b5b;
+  line-height: 1.7;
+}
 @media (max-width: 680px) {
   .solution-finder {
     padding: 22px 18px;
   }
   .solution-finder-fields {
     grid-template-columns: 1fr;
+  }
+  .project-brief-actions,
+  .contextual-inquiry-entry > div {
+    align-items: stretch;
+  }
+  .project-brief-actions button,
+  .project-brief-actions .original-inquiry-button,
+  .contextual-inquiry-entry > div > a {
+    width: 100%;
+    justify-content: center;
+  }
+  .contextual-inquiry-entry {
+    padding: 22px 18px;
   }
 }
 .original-agency {

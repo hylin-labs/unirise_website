@@ -15,6 +15,7 @@ import type {
   InquiryPayload,
 } from '../lib/translation-types';
 import { PublicInnerPage } from './public-inner-page';
+import { ContextualInquiryEntry } from './contextual-inquiry-entry';
 import { PublicInquiryForm } from './public-inquiry-form';
 import { SolutionFinder } from './solution-finder';
 
@@ -182,6 +183,15 @@ export async function PublicCatalogRoute({
             {text.inquire}
           </a>
         </article>
+        <ContextualInquiryEntry
+          locale={locale}
+          topic={productTitle}
+          inquiryHref={localizedPath(
+            locale,
+            '/inquiry',
+            `?product=${encodeURIComponent(productTitle)}`,
+          )}
+        />
       </div>
     </PublicInnerPage>
   );
@@ -189,12 +199,16 @@ export async function PublicCatalogRoute({
 
 const newsCopy = {
   'zh-TW': {
+    eyebrow: '最新消息',
+    label: '最新消息',
     video: '影片',
     back: '← 回到最新消息',
     inquire: '洽詢更多資訊',
     more: '了解更多 →',
   },
   en: {
+    eyebrow: 'News',
+    label: 'NEWS',
     video: 'video',
     back: '← Back to news',
     inquire: 'Request more information',
@@ -224,14 +238,14 @@ export async function PublicNewsRoute({
       path="/news"
       chrome={chrome}
       title={post?.title || chrome.text.nav[2]}
-      eyebrow="News"
+      eyebrow={copy.eyebrow}
       breadcrumbs={[{ label: chrome.text.nav[2] }]}
       contentClassName="news-page"
     >
       {post ? (
         <article className="article article-detail">
           <img src={post.imageUrl} alt={post.title} decoding="async" />
-          <time>NEWS · {post.legacyId}</time>
+          <time>{copy.label} · {post.legacyId}</time>
           <h2>{post.title}</h2>
           <p className="article-lead">{post.lead}</p>
           <ul>
@@ -261,6 +275,15 @@ export async function PublicNewsRoute({
               {copy.inquire}
             </a>
           </div>
+          <ContextualInquiryEntry
+            locale={locale}
+            topic={post.title}
+            inquiryHref={localizedPath(
+              locale,
+              '/inquiry',
+              `?product=${encodeURIComponent(post.title)}`,
+            )}
+          />
         </article>
       ) : (
         <div className="news-card-grid">
@@ -280,7 +303,7 @@ export async function PublicNewsRoute({
                   decoding="async"
                 />
               </a>
-              <time>NEWS</time>
+              <time>{copy.label}</time>
               <h2>{item.title}</h2>
               <p>{item.lead}</p>
               <a
@@ -302,12 +325,14 @@ export async function PublicNewsRoute({
 
 const downloadCopy = {
   'zh-TW': {
+    eyebrow: '下載',
     selected: '{collection} 資料索取',
     choose: '選擇產品資料',
     help: '原網站設有下列產品資料分類。為確保資料為最新版本，請透過詢價系統索取。',
     request: '索取產品資料',
   },
   en: {
+    eyebrow: 'Download',
     selected: 'Request {collection} information',
     choose: 'Choose product information',
     help: 'The original website lists the product information categories below. Please use the inquiry system to request the latest version.',
@@ -348,7 +373,7 @@ export async function PublicDownloadsRoute({
       path="/downloads"
       chrome={chrome}
       title={collection || chrome.text.nav[3]}
-      eyebrow="Download"
+      eyebrow={copy.eyebrow}
       breadcrumbs={[{ label: chrome.text.nav[3] }]}
     >
       <div className="original-content-panel download-panel">
@@ -359,16 +384,27 @@ export async function PublicDownloadsRoute({
         </h2>
         <p>{copy.help}</p>
         {collection ? (
-          <a
-            className="original-inquiry-button"
-            href={localizedPath(
-              locale,
-              '/inquiry',
-              `?product=${encodeURIComponent(collection)}`,
-            )}
-          >
-            {copy.request}
-          </a>
+          <>
+            <a
+              className="original-inquiry-button"
+              href={localizedPath(
+                locale,
+                '/inquiry',
+                `?product=${encodeURIComponent(collection)}`,
+              )}
+            >
+              {copy.request}
+            </a>
+            <ContextualInquiryEntry
+              locale={locale}
+              topic={collection}
+              inquiryHref={localizedPath(
+                locale,
+                '/inquiry',
+                `?product=${encodeURIComponent(collection)}`,
+              )}
+            />
+          </>
         ) : (
           <div className="download-list">
             {downloads.map((item) => (
@@ -439,6 +475,7 @@ export async function PublicInquiryRoute({
     ],
   );
   const product = first(params.product) || '';
+  const brief = first(params.brief)?.slice(0, 900) || '';
   return (
     <PublicInnerPage
       locale={locale}
@@ -449,7 +486,13 @@ export async function PublicInquiryRoute({
       breadcrumbs={[{ label: inquiry.text.title }]}
     >
       <SolutionFinder locale={locale} />
-      <PublicInquiryForm key={product} inquiry={inquiry} product={product} />
+      <PublicInquiryForm
+        key={`${product}:${brief}`}
+        inquiry={inquiry}
+        product={product}
+        brief={brief}
+        locale={locale}
+      />
     </PublicInnerPage>
   );
 }

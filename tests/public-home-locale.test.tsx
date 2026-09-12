@@ -73,6 +73,32 @@ function englishPayloads() {
 }
 
 describe('PublicHome locale rendering', () => {
+  it('shows newly published news on the home page instead of pinning only imported IDs', () => {
+    const latest = {
+      ...news[0],
+      id: 'news-4999',
+      legacyId: '4999',
+      title: 'Newly published update',
+      publishedAt: '2026-09-11T12:00:00.000Z',
+    };
+    const html = renderToStaticMarkup(
+      <PublicHome
+        locale="zh-TW"
+        home={initialPublicContent.home}
+        chrome={initialPublicContent.chrome}
+        news={[...news, latest].map((item) => ({
+          ...item,
+          locale: 'zh-TW' as const,
+          requestedLocale: 'zh-TW' as const,
+        }))}
+        pathname="/"
+      />,
+    );
+
+    expect(html).toContain('Newly published update');
+    expect(html).toContain('href="/news?id=4999"');
+  });
+
   it('keeps the Chinese home markup, classes, assets, and legacy links intact', () => {
     const html = renderToStaticMarkup(
       <PublicHome

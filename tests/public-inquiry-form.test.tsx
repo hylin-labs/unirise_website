@@ -103,4 +103,50 @@ describe('localized inquiry workflow', () => {
     );
     expect(field.checkValidity()).toBe(true);
   });
+
+  it('shows a project brief and includes it with the submitted enquiry', async () => {
+    const inquiry = structuredClone(initialPublicContent.inquiry);
+    await act(async () =>
+      root.render(
+        <PublicInquiryForm
+          inquiry={inquiry}
+          product="XAVIS Food X-ray Inspection"
+          brief="Packaged food · X-ray foreign-object inspection · High-capacity line"
+          locale="en"
+        />,
+      ),
+    );
+    expect(container.textContent).toContain('Project brief');
+    const fields = {
+      name: 'Lin',
+      company: 'Test company',
+      phone: '06-3319283',
+      email: 'lin@example.com',
+      message: 'Please contact me about this line.',
+    };
+    for (const [name, value] of Object.entries(fields)) {
+      const field = container.querySelector<
+        HTMLInputElement | HTMLTextAreaElement
+      >(`[name="${name}"]`)!;
+      field.value = value;
+    }
+    const fetchStub = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ accepted: true, followUpDelayed: false }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchStub);
+    await act(async () =>
+      container
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+    );
+    const request = fetchStub.mock.calls[0]?.[1];
+    expect(JSON.parse(request?.body as string)).toMatchObject({
+        message:
+          'Packaged food · X-ray foreign-object inspection · High-capacity line\n\nPlease contact me about this line.',
+      });
+  });
 });

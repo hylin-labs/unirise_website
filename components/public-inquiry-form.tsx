@@ -1,14 +1,19 @@
 'use client';
 
 import { type SyntheticEvent, useState } from 'react';
+import type { Locale } from '../lib/locales';
 import type { InquiryPayload } from '../lib/translation-types';
 
 export function PublicInquiryForm({
   inquiry,
   product,
+  brief = '',
+  locale = 'zh-TW',
 }: {
   inquiry: InquiryPayload;
   product: string;
+  brief?: string;
+  locale?: Locale;
 }) {
   const [status, setStatus] = useState('');
   const [sending, setSending] = useState(false);
@@ -35,7 +40,9 @@ export function PublicInquiryForm({
           phone: value('phone'),
           email: value('email'),
           topic: value('product'),
-          message: value('message'),
+          message: brief
+            ? `${brief}\n\n${value('message')}`.trim()
+            : value('message'),
           sourcePath: `${window.location.pathname}${window.location.search}`,
         }),
       });
@@ -76,6 +83,12 @@ export function PublicInquiryForm({
     >
       <h2>{product || text.heading}</h2>
       <p>{text.help}</p>
+      {brief && (
+        <div className="inquiry-brief" aria-live="polite">
+          <strong>{locale === 'en' ? 'Project brief' : '專案需求摘要'}</strong>
+          <p>{brief}</p>
+        </div>
+      )}
       <label>
         {text.name}
         <input name="name" required autoComplete="name" {...validation} />

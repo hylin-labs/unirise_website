@@ -2,7 +2,6 @@
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import type { AdminIdentity } from '../lib/admin-auth';
 import {
   buildAdminContentPayload,
@@ -15,6 +14,8 @@ import {
 import type { DashboardSnapshot } from '../lib/analytics';
 import styles from './admin-dashboard.module.css';
 import { TranslationManager } from './translation-manager';
+
+/* oxlint-disable next/no-html-link-for-pages -- The logo intentionally performs a full navigation out of administrator state. */
 
 type View = 'overview' | 'content' | 'leads' | 'gaps' | 'translations';
 
@@ -75,6 +76,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [updating, setUpdating] = useState('');
   const [editor, setEditor] = useState<AdminContentEditor | null>(null);
   const [preview, setPreview] = useState(false);
@@ -120,6 +122,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
     const operation = `${kind}:${id}`;
     setUpdating(operation);
     setError('');
+    setNotice('');
     try {
       const response = await fetch(`/api/admin/${kind}`, {
         method: 'PATCH',
@@ -128,10 +131,17 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
       });
       if (redirectAdminUnauthorized(response, window.location)) return;
       if (response.status === 409) {
+        await load();
         setError('內容已由其他工作階段更新。資料已重新載入，請再次確認。');
+        return;
       } else if (!response.ok) {
         throw new Error('update_failed');
       }
+      setNotice(
+        status === 'published'
+          ? '內容已發布，將顯示於公開網站。'
+          : '內容已改為草稿，已從公開網站移除。',
+      );
       await load();
     } catch {
       setError('無法更新發布狀態，請稍後再試。');
@@ -188,11 +198,11 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
     setPreview(showPreview);
   }
 
-  async function saveContent(event: SyntheticEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveContent(publishAfterSave = false) {
     if (!editor) return;
     setUpdating(`save:${editor.kind}`);
     setError('');
+    setNotice('');
     try {
       const response = await fetch(`/api/admin/${editor.kind}`, {
         method: 'POST',
@@ -200,16 +210,48 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
         body: JSON.stringify(buildAdminContentPayload(editor)),
       });
       if (redirectAdminUnauthorized(response, window.location)) return;
+      if (response.status === 400) {
+        setError(
+          editor.kind === 'news'
+            ? '新聞未儲存。請確認原網址 ID 只含數字，且已填寫標題、摘要及有效的高解析圖片網址（https:// 或 / 開頭）。'
+            : '內容未儲存。請確認所有必填欄位與網址格式後再試。',
+        );
+        return;
+      }
       if (response.status === 409) {
+        await load();
         setError('內容已由其他工作階段更新。資料已重新載入，請再次編輯。');
+        return;
       } else if (!response.ok) {
         throw new Error('save_failed');
       }
+      const saved = (await response.json()) as { record?: { id?: unknown } };
+      const savedId =
+        typeof saved.record?.id === 'string' ? saved.record.id : editor.id;
+      if (publishAfterSave) {
+        if (!savedId) throw new Error('missing_saved_id');
+        const publication = await fetch(`/api/admin/${editor.kind}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: savedId, status: 'published' }),
+        });
+        if (redirectAdminUnauthorized(publication, window.location)) return;
+        if (!publication.ok) throw new Error('publish_failed');
+      }
       setEditor(null);
       setPreview(false);
+      setNotice(
+        publishAfterSave
+          ? '內容已儲存並發布，公開網站會立即顯示最新內容。'
+          : '內容已儲存為草稿。發布後才會顯示於公開網站。',
+      );
       await load();
     } catch {
-      setError('內容未儲存。請確認必填欄位及網址格式後再試。');
+      setError(
+        publishAfterSave
+          ? '內容可能已儲存，但尚未成功發布。請重新載入後確認狀態。'
+          : '內容未儲存。請確認必填欄位及網址格式後再試。',
+      );
     } finally {
       setUpdating('');
     }
@@ -218,7 +260,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
   return (
     <main className={styles.dashboard}>
       <aside className={styles.sidebar}>
-        <Link
+        <a
           className={styles.dashboardBrand}
           href="/"
           aria-label="回到合軒科技網站"
@@ -229,7 +271,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
             height={72}
             alt="合軒科技有限公司"
           />
-        </Link>
+        </a>
         <nav aria-label="管理後台">
           {(
             [
@@ -323,6 +365,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
             {error}
           </div>
         ) : null}
+        {notice ? <div className={styles.notice}>{notice}</div> : null}
         {loading ? (
           <div className={styles.loading}>正在載入最新資料…</div>
         ) : null}
@@ -444,7 +487,13 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                   </div>
                 </div>
                 {editor?.kind === kind ? (
-                  <form className={styles.contentEditor} onSubmit={saveContent}>
+                  <form
+                    className={styles.contentEditor}
+                    onSubmit={(event: SyntheticEvent<HTMLFormElement>) => {
+                      event.preventDefault();
+                      void saveContent(false);
+                    }}
+                  >
                     <div className={styles.editorHeading}>
                       <h3>
                         {editor.id ? `編輯：${editor.title}` : `新增${label}`}
@@ -608,8 +657,21 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                         type="submit"
                         disabled={updating === `save:${kind}`}
                       >
-                        {updating === `save:${kind}` ? '儲存中…' : '儲存內容'}
+                        {updating === `save:${kind}`
+                          ? '儲存中…'
+                          : '儲存為草稿'}
                       </button>
+                      {editor.status === 'draft' ? (
+                        <button
+                          type="button"
+                          disabled={updating === `save:${kind}`}
+                          onClick={() => void saveContent(true)}
+                        >
+                          {updating === `save:${kind}`
+                            ? '發布中…'
+                            : '儲存並發布'}
+                        </button>
+                      ) : null}
                     </div>
                     {preview ? (
                       <article className={styles.contentPreview}>

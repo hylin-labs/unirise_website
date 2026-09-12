@@ -31,6 +31,14 @@ const copy = {
     details: '查看方案詳情',
     inquiry: '把選型結果帶入詢問',
     summary: '需求摘要',
+    projectBrief: '專案需求工作台',
+    projectHelp:
+      '先將這份初步需求摘要儲存於此裝置，再決定是否送出詢價。摘要不會包含您的個人資料。',
+    save: '儲存摘要',
+    saved: '已儲存於此裝置',
+    copy: '複製摘要',
+    copied: '已複製',
+    bringToInquiry: '帶入詢價',
     materials: {
       fresh: '新鮮蔬果／農產',
       protein: '肉品、海鮮或蛋白質食品',
@@ -63,6 +71,14 @@ const copy = {
     details: 'View solution details',
     inquiry: 'Bring this result to an enquiry',
     summary: 'Requirement summary',
+    projectBrief: 'Project Brief',
+    projectHelp:
+      'Save this preliminary brief on this device, then decide whether to send an enquiry. The brief contains no personal information.',
+    save: 'Save brief',
+    saved: 'Saved on this device',
+    copy: 'Copy brief',
+    copied: 'Copied',
+    bringToInquiry: 'Bring to enquiry',
     materials: {
       fresh: 'Fresh produce and agricultural products',
       protein: 'Meat, seafood, or protein products',
@@ -140,6 +156,8 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
   const [material, setMaterial] = useState<FinderValue | ''>('');
   const [goal, setGoal] = useState<Goal | ''>('');
   const [capacity, setCapacity] = useState<Capacity | ''>('');
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
   const recommendation = useMemo(
     () => (material && goal && capacity ? recommendationFor(locale, goal) : null),
     [capacity, goal, locale, material],
@@ -149,11 +167,41 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
     return `${text.materials[material]} · ${text.goals[goal]} · ${text.capacities[capacity]}`;
   }, [capacity, goal, material, recommendation, text]);
   const inquiryHref = recommendation
-    ? `?product=${encodeURIComponent(`${recommendation.title}｜${summary}`)}`
+    ? `?product=${encodeURIComponent(recommendation.title)}&brief=${encodeURIComponent(summary)}`
     : '#inquiry-form';
+  const saveBrief = () => {
+    if (!recommendation || !summary) return;
+    try {
+      window.localStorage.setItem(
+        'unirise-project-brief',
+        JSON.stringify({
+          title: recommendation.title,
+          summary,
+          savedAt: new Date().toISOString(),
+        }),
+      );
+      setSaved(true);
+    } catch {
+      // Storage can be unavailable in a private browsing session. The enquiry
+      // path remains available without saving anything.
+    }
+  };
+  const copyBrief = async () => {
+    if (!recommendation || !summary || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(`${recommendation.title}\n${summary}`);
+      setCopied(true);
+    } catch {
+      // Copying is optional; visitors can still use the enquiry link.
+    }
+  };
 
   return (
-    <section className="solution-finder" aria-labelledby="solution-finder-title">
+    <section
+      className="solution-finder"
+      id="solution-finder"
+      aria-labelledby="solution-finder-title"
+    >
       <div className="solution-finder-intro">
         <span>01</span>
         <div>
@@ -219,6 +267,23 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               {text.inquiry}
             </a>
           </div>
+          <aside className="project-brief" aria-label={text.projectBrief}>
+            <div>
+              <strong>{text.projectBrief}</strong>
+              <p>{text.projectHelp}</p>
+            </div>
+            <div className="project-brief-actions">
+              <button type="button" onClick={saveBrief}>
+                {saved ? text.saved : text.save}
+              </button>
+              <button type="button" onClick={copyBrief}>
+                {copied ? text.copied : text.copy}
+              </button>
+              <a className="original-inquiry-button" href={inquiryHref}>
+                {text.bringToInquiry}
+              </a>
+            </div>
+          </aside>
         </div>
       )}
     </section>

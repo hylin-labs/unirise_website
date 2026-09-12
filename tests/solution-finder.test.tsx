@@ -44,5 +44,11 @@ describe('solution finder', () => {
       links.find((link) => link.textContent === 'Bring this result to an enquiry')
         ?.getAttribute('href'),
     ).toContain('?product=');
+    expect(
+      links.find((link) => link.textContent === 'Bring this result to an enquiry')
+        ?.getAttribute('href'),
+    ).toContain('&brief=');
+    expect(container.textContent).toContain('Project Brief');
+    expect(container.textContent).toContain('Save brief');
   });
 });

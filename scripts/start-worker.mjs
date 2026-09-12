@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = resolve(root, 'dist', 'server', 'wrangler.json');
 const envFile = resolve(root, '.dev.vars');
+const persistenceDirectory = resolve(root, '.wrangler', 'state');
 const wrangler = resolve(
   root,
   'node_modules',
@@ -34,6 +35,8 @@ const child = spawn(
     config,
     '--env-file',
     envFile,
+    '--persist-to',
+    persistenceDirectory,
     ...process.argv.slice(2),
   ],
   { cwd: root, stdio: 'inherit', windowsHide: true },

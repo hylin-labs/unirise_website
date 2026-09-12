@@ -431,6 +431,13 @@
   background: #fff0f1;
   color: #94151b;
 }
+.notice {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-left: 4px solid #247a46;
+  background: #edf8f0;
+  color: #1d6138;
+}
 .loading {
   padding: 60px;
   background: #fff;
