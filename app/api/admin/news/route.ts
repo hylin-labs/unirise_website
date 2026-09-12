@@ -3,6 +3,7 @@ import { requireAdmin } from '../../../../lib/admin-auth';
 import {
   ContentConflictError,
   ContentValidationError,
+  deleteNews,
   listAllNews,
   saveNews,
   setNewsPublication,
@@ -54,6 +55,14 @@ export function createNewsAdminHandler(
     }
 
     try {
+      if (request.method === 'DELETE') {
+        const content = payload as { id?: unknown };
+        await deleteNews(db, typeof content.id === 'string' ? content.id : '', actor);
+        return Response.json(
+          { deleted: true },
+          { headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
       if (request.method === 'PATCH') {
         const publication = payload as { id?: unknown; status?: unknown };
         const id = typeof publication.id === 'string' ? publication.id : '';
@@ -68,6 +77,7 @@ export function createNewsAdminHandler(
           { headers: { 'Cache-Control': 'no-store' } },
         );
       }
+      if (request.method !== 'POST') return json('method_not_allowed', 405);
       const record = await saveNews(db, payload as NewsInput, actor);
       return Response.json(
         { record },
@@ -94,4 +104,5 @@ function handler(request: Request) {
 
 export const POST = handler;
 export const PATCH = handler;
+export const DELETE = handler;
 export const GET = handler;

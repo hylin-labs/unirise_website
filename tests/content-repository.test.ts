@@ -8,6 +8,7 @@ import {
 import {
   ContentConflictError,
   ContentValidationError,
+  deleteNews,
   findPublishedNewsByLegacyId,
   findPublishedNewsByLegacyIdForLocale,
   listPublishedDownloads,
@@ -980,6 +981,78 @@ describe('managed content repository', () => {
     expect(database.rows('managed_downloads')).toEqual([]);
     expect(database.rows('admin_audit_log')).toEqual([]);
   });
+
+  it('assigns a new public news number when the administrator leaves it blank', async () => {
+    const database = new ContentDatabase();
+    database.seed('managed_news', {
+      id: 'existing-news',
+      legacy_id: '3944',
+      title: 'Existing news',
+      lead: 'Existing lead',
+      image_url: '/existing.jpg',
+      highlights_json: '[]',
+      video_url: null,
+      status: 'published',
+      published_at: '2026-09-10T00:00:00.000Z',
+      updated_at: '2026-09-10T00:00:00.000Z',
+    });
+
+    const created = await saveNews(
+      database.d1,
+      {
+        title: 'Automatically numbered news',
+        lead: 'A new item without an original URL ID.',
+        imageUrl: '/new.jpg',
+        highlights: [],
+        status: 'draft',
+      },
+      admin,
+    );
+
+    expect(created.legacyId).toBe('3945');
+    expect(database.rows('managed_news')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: created.id, legacy_id: '3945' }),
+      ]),
+    );
+  });
+
+  it('permanently deletes content with its translations and records the administrator action', async () => {
+    const database = new ContentDatabase();
+    await saveNews(
+      database.d1,
+      {
+        id: 'remove-news',
+        legacyId: '9010',
+        title: 'Remove this news',
+        lead: 'Remove this item and its related translations.',
+        imageUrl: '/remove.jpg',
+        highlights: [],
+        status: 'draft',
+      },
+      admin,
+    );
+    database.seed(
+      'content_translations',
+      translationFixture('news', 'remove-news', { kind: 'news' }),
+    );
+    database.seed('translation_job_items', {
+      id: 'job-item-remove-news',
+      resource_type: 'news',
+      resource_id: 'remove-news',
+    });
+
+    await deleteNews(database.d1, 'remove-news', admin);
+
+    expect(database.rows('managed_news')).toEqual([]);
+    expect(database.rows('content_translations')).toEqual([]);
+    expect(database.rows('translation_job_items')).toEqual([]);
+    expect(database.rows('admin_audit_log')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: 'news.deleted', target_id: 'remove-news' }),
+      ]),
+    );
+  });
 });
 
 describe('admin content APIs', () => {
@@ -1107,5 +1180,27 @@ describe('admin content APIs', () => {
         status: 'published',
       }),
     );
+  });
+
+  it.each([
+    ['news', 'managed_news', 'news-delete', createNewsAdminHandler],
+    ['downloads', 'managed_downloads', 'download-delete', createDownloadsAdminHandler],
+    ['knowledge', 'chat_knowledge', 'knowledge-delete', createKnowledgeAdminHandler],
+  ])('deletes authenticated %s content through its admin API', async (_name, table, id, createHandler) => {
+    const database = new ContentDatabase();
+    database.seed(table, { id, title: 'Disposable content' });
+    const handler = createHandler(database.d1, async () => admin);
+
+    const response = await handler(
+      new Request('https://unirise.example/api/admin/content', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: true });
+    expect(database.rows(table)).toEqual([]);
   });
 });

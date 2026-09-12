@@ -64,7 +64,7 @@ export type KnowledgeInput = {
 
 export type NewsInput = {
   id?: string;
-  legacyId: string;
+  legacyId?: string;
   title: string;
   lead: string;
   imageUrl: string;
@@ -301,6 +301,25 @@ function legacyId(value: unknown) {
     throw new ContentValidationError('legacyId must contain only digits');
   }
   return normalized;
+}
+
+async function generatedNewsLegacyId(db: D1Database) {
+  const rows = await db
+    .prepare(`SELECT legacy_id FROM ${uniriseSchema.managedNews}`)
+    .all<{ legacy_id: string }>();
+  const largest = rows.results.reduce((current, row) => {
+    const value = Number(row.legacy_id);
+    return Number.isSafeInteger(value) && value > current ? value : current;
+  }, 0);
+  if (largest >= 999_999_999_999) {
+    throw new ContentValidationError('no news identifiers are available');
+  }
+  return String(largest + 1);
+}
+
+async function newsLegacyId(db: D1Database, value: unknown) {
+  if (value == null || value === '') return generatedNewsLegacyId(db);
+  return legacyId(value);
 }
 
 function inputRecord<T extends object>(value: T): T {
@@ -769,7 +788,7 @@ export async function saveNews(
 ) {
   const content = inputRecord(input);
   const id = recordId(content.id);
-  const normalizedLegacyId = legacyId(content.legacyId);
+  const normalizedLegacyId = await newsLegacyId(db, content.legacyId);
   const title = requiredText(content.title, 'title', 160);
   const lead = requiredText(content.lead, 'body', 8000);
   const imageUrl = safeUrl(content.imageUrl, 'imageUrl');
@@ -914,6 +933,79 @@ export async function saveDownload(
     status: publication.status,
     publishedAt: publication.publishedAt,
   } satisfies ManagedDownload;
+}
+
+async function deleteManagedContent(
+  db: D1Database,
+  table: string,
+  targetType: 'news' | 'download' | 'knowledge',
+  id: string,
+  actor: AdminIdentity,
+) {
+  const normalizedId = requiredText(id, 'id', 160);
+  const existing = await db
+    .prepare(`SELECT id, title FROM ${table} WHERE id = ? LIMIT 1`)
+    .bind(normalizedId)
+    .first<{ id: string; title: string }>();
+  if (!existing) {
+    throw new ContentValidationError(`${targetType} was not found`);
+  }
+
+  const timestamp = new Date().toISOString();
+  await db.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(normalizedId).run();
+  await db.batch([
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.contentTranslations} WHERE resource_type = ? AND resource_id = ?`,
+      )
+      .bind(targetType, normalizedId),
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.translationJobItems} WHERE resource_type = ? AND resource_id = ?`,
+      )
+      .bind(targetType, normalizedId),
+    auditStatement(
+      db,
+      actor,
+      `${targetType}.deleted`,
+      targetType,
+      normalizedId,
+      { title: existing.title },
+      timestamp,
+    ),
+  ]);
+}
+
+export function deleteNews(db: D1Database, id: string, actor: AdminIdentity) {
+  return deleteManagedContent(db, uniriseSchema.managedNews, 'news', id, actor);
+}
+
+export function deleteDownload(
+  db: D1Database,
+  id: string,
+  actor: AdminIdentity,
+) {
+  return deleteManagedContent(
+    db,
+    uniriseSchema.managedDownloads,
+    'download',
+    id,
+    actor,
+  );
+}
+
+export function deleteKnowledge(
+  db: D1Database,
+  id: string,
+  actor: AdminIdentity,
+) {
+  return deleteManagedContent(
+    db,
+    uniriseSchema.chatKnowledge,
+    'knowledge',
+    id,
+    actor,
+  );
 }
 
 async function setPublication(

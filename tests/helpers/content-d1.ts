@@ -209,6 +209,22 @@ export class ContentDatabase {
       return 1;
     }
 
+    const deletion = query.match(/delete\s+from\s+(\w+)\s+where\s+(.+)/);
+    if (deletion) {
+      const predicates = deletion[2].split(/\s+and\s+/);
+      const rows = this.tables.get(deletion[1]) ?? [];
+      const retained = rows.filter((row) =>
+        !predicates.every((predicate, index) => {
+          const match = predicate.match(/^(\w+)\s*=\s*\?$/);
+          if (!match) throw new Error(`Unsupported WHERE clause: ${predicate}`);
+          return row[match[1]] === values[index];
+        }),
+      );
+      this.lastChanges = rows.length - retained.length;
+      this.tables.set(deletion[1], retained);
+      return this.lastChanges;
+    }
+
     throw new Error(`ContentDatabase does not support write SQL: ${sql}`);
   }
 }

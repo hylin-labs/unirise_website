@@ -497,6 +497,15 @@
 .rowActions {
   justify-content: flex-end;
 }
+.rowActions .deleteButton {
+  border-color: #9d1117;
+  background: #9d1117;
+  color: #fff;
+}
+.rowActions .deleteButton:hover {
+  border-color: #7c0d12;
+  background: #7c0d12;
+}
 .contentRow button:disabled {
   opacity: 0.5;
   cursor: wait;

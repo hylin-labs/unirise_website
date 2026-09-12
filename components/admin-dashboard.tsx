@@ -213,7 +213,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
       if (response.status === 400) {
         setError(
           editor.kind === 'news'
-            ? '新聞未儲存。請確認原網址 ID 只含數字，且已填寫標題、摘要及有效的高解析圖片網址（https:// 或 / 開頭）。'
+            ? '新聞未儲存。請確認已填寫標題、摘要及有效的高解析圖片網址（https:// 或 / 開頭）。'
             : '內容未儲存。請確認所有必填欄位與網址格式後再試。',
         );
         return;
@@ -252,6 +252,43 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
           ? '內容可能已儲存，但尚未成功發布。請重新載入後確認狀態。'
           : '內容未儲存。請確認必填欄位及網址格式後再試。',
       );
+    } finally {
+      setUpdating('');
+    }
+  }
+
+  async function deleteContent(
+    kind: 'news' | 'downloads' | 'knowledge',
+    id: string,
+    title: string,
+  ) {
+    if (
+      !window.confirm(
+        `確定要永久刪除「${title}」嗎？此動作也會移除相關英文翻譯，無法復原。`,
+      )
+    ) {
+      return;
+    }
+    const operation = `delete:${kind}:${id}`;
+    setUpdating(operation);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(`/api/admin/${kind}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('delete_failed');
+      if (editor?.id === id) {
+        setEditor(null);
+        setPreview(false);
+      }
+      setNotice('內容已永久刪除，公開網站與聊天知識庫會立即同步更新。');
+      await load();
+    } catch {
+      setError('無法刪除內容，請重新載入後再試。');
     } finally {
       setUpdating('');
     }
@@ -509,9 +546,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                       </button>
                     </div>
                     <div className={styles.editorFields}>
-                      {(kind === 'news' || kind === 'downloads') && (
+                      {kind === 'downloads' && (
                         <label>
-                          原網址 ID
+                          下載編號
                           <input
                             required
                             inputMode="numeric"
@@ -526,6 +563,11 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                           />
                         </label>
                       )}
+                      {kind === 'news' ? (
+                        <p className={styles.editorNotice}>
+                          公開新聞編號由系統自動建立，無需填寫原網址 ID。
+                        </p>
+                      ) : null}
                       <label>
                         標題
                         <input
@@ -720,7 +762,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                             <strong>{record.title}</strong>
                             <small>
                               {'legacyId' in record
-                                ? `原網址 ID：${record.legacyId}`
+                                ? kind === 'news'
+                                  ? `新聞編號：${record.legacyId}`
+                                  : `下載編號：${record.legacyId}`
                                 : record.href}
                               <br />
                               更新：{formatDate(record.updatedAt)}
@@ -739,6 +783,18 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                               onClick={() => editContent(kind, record)}
                             >
                               編輯
+                            </button>
+                            <button
+                              className={styles.deleteButton}
+                              type="button"
+                              disabled={updating === `delete:${kind}:${record.id}`}
+                              onClick={() =>
+                                void deleteContent(kind, record.id, record.title)
+                              }
+                            >
+                              {updating === `delete:${kind}:${record.id}`
+                                ? '刪除中…'
+                                : '刪除'}
                             </button>
                             <button
                               type="button"
