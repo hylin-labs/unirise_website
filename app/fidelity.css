@@ -29,6 +29,19 @@
 button.original-inquiry-button{background:#fff;font-family:inherit;cursor:pointer}
 button.original-inquiry-button:hover{background:#C7161E}
 
+.original-search-panel{max-width:900px;padding-top:10px}
+.original-search-panel form>label{display:block;color:#414042;font-size:20px;font-weight:600}
+.original-search-panel form>div{display:flex;gap:10px;margin-top:14px}
+.original-search-panel input{min-width:0;flex:1;padding:12px 14px;border:1px solid #9da0a5;border-radius:2px;color:#333;font:16px Arial,sans-serif}
+.original-search-panel button{min-width:104px;padding:12px 18px;border:1px solid #c7161e;background:#c7161e;color:#fff;font:700 16px Arial,sans-serif;cursor:pointer}
+.original-search-panel button:hover,.original-search-panel button:focus-visible{background:#9f1118;outline:2px solid #c7161e;outline-offset:2px}
+.search-summary,.search-empty{margin:28px 0 0;color:#666;font-size:16px;line-height:1.7}
+.search-results{margin-top:20px;border-top:1px solid #e2e2e2}
+.search-results article{padding:22px 0;border-bottom:1px solid #e2e2e2}
+.search-results span{color:#c7161e;font-size:13px;font-weight:700;letter-spacing:.06em}
+.search-results h2{margin:7px 0 8px;font-size:22px;line-height:1.4}.search-results h2 a{color:#333}.search-results h2 a:hover{color:#c7161e}
+.search-results p{margin:0;color:#666;font-size:16px;line-height:1.7}
+
 @media(max-width:1200px){
   .original-about-inner{height:auto;min-height:0;padding:0 40px;display:block;overflow:visible}
   .original-about article{width:100%;padding-left:0}.original-about-image{position:static;width:100%;height:auto}.original-about-image img{max-width:670px}
@@ -48,4 +61,5 @@ button.original-inquiry-button:hover{background:#C7161E}
   .original-feature-border{padding-left:5%}.original-feature-border>div{width:157px}.original-feature-linkbox{width:157px}.original-feature-line{flex-basis:55px;width:55px}.original-feature-line img{width:55px}.original-feature-border a{flex-basis:110px;width:110px;margin-left:-8px}
   .original-agency .original-container{padding-top:20px}.original-agency-carousel{margin-top:15px}.original-agency-list h3{margin-top:0;font-size:24px}.original-copyright{font-size:13px}
   .original-inner-content{padding-bottom:55px}.original-inner-title{margin-top:16px}.original-product-layout{gap:20px}.original-product-layout article{padding-top:0}
+  .original-search-panel{padding:0}.original-search-panel form>div{flex-direction:column}.original-search-panel button{width:100%}
 }

@@ -1168,22 +1168,44 @@ a {
 .original-top-links.right {
   justify-content: flex-end;
 }
-.original-top-links.right > span {
+.original-language-label {
   margin-left: 12px;
-  padding: 3px 7px;
-  border: 1px solid #aaa;
-  color: #444;
-  font:
-    11px Arial,
-    sans-serif;
+  color: #666;
+  font-size: 14px;
 }
-.original-top-links.right > span nav {
+.original-top-links.right > .original-language-switcher {
+  margin-left: 8px;
+}
+.original-language-switcher nav {
   display: flex;
-  gap: 7px;
+  overflow: hidden;
+  border: 1px solid #b7b7b7;
+  border-radius: 3px;
+  background: #fff;
 }
-.original-top-links.right > span a[aria-current='page'] {
-  font-weight: 700;
-  text-decoration: underline;
+.original-language-switcher a {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: #333;
+  font: 700 14px/1 Arial, sans-serif;
+  letter-spacing: .01em;
+}
+.original-language-switcher a + a {
+  border-left: 1px solid #b7b7b7;
+}
+.original-language-switcher a:hover,
+.original-language-switcher a:focus-visible {
+  background: #f6e3e4;
+  outline: 2px solid #c7161e;
+  outline-offset: -2px;
+}
+.original-language-switcher a[aria-current='page'] {
+  background: var(--original-red);
+  color: #fff;
+  text-decoration: none;
 }
 .original-main-nav {
   position: relative;

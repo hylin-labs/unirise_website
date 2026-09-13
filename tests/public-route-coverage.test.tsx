@@ -19,11 +19,13 @@ const routes = {
   '/catalog': () => import('../app/catalog/page'),
   '/news': () => import('../app/news/page'),
   '/downloads': () => import('../app/downloads/page'),
+  '/search': () => import('../app/search/page'),
   '/contact': () => import('../app/contact/page'),
   '/inquiry': () => import('../app/inquiry/page'),
   '/en/catalog': () => import('../app/en/catalog/page'),
   '/en/news': () => import('../app/en/news/page'),
   '/en/downloads': () => import('../app/en/downloads/page'),
+  '/en/search': () => import('../app/en/search/page'),
   '/en/contact': () => import('../app/en/contact/page'),
   '/en/inquiry': () => import('../app/en/inquiry/page'),
 };
@@ -155,6 +157,7 @@ const matrix = [
   ['/news', 'news-card-grid', 'Xavis inspection update'],
   ['/news?id=3944', 'article-detail', 'Inspection news in English.'],
   ['/downloads', 'download-list', 'NIHOT recycling'],
+  ['/search?q=inspection', '找不到相關', 'Xavis inspection update'],
   ['/downloads?id=3853', 'NIHOT-回收再生', 'NIHOT recycling'],
   ['/contact', 'contact-card', 'Contact us'],
   [

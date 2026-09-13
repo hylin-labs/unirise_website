@@ -639,19 +639,6 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                       {kind === 'knowledge' ? (
                         <>
                           <label>
-                            公開來源網址
-                            <input
-                              required
-                              value={editor.href}
-                              onChange={(event) =>
-                                setEditor({
-                                  ...editor,
-                                  href: event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
                             標籤（逗號分隔）
                             <input
                               value={editor.tagsText}
@@ -745,7 +732,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                           </ul>
                         ) : null}
                         {kind === 'knowledge' ? (
-                          <small>來源：{editor.href || '尚未輸入'}</small>
+                          <small>此內容僅供網站助理查詢與回答。</small>
                         ) : null}
                       </article>
                     ) : null}
@@ -765,7 +752,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                                 ? kind === 'news'
                                   ? `新聞編號：${record.legacyId}`
                                   : `下載編號：${record.legacyId}`
-                                : record.href}
+                                : '供網站助理使用'}
                               <br />
                               更新：{formatDate(record.updatedAt)}
                             </small>

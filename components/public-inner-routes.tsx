@@ -340,6 +340,175 @@ const downloadCopy = {
   },
 };
 
+const searchCopy = {
+  'zh-TW': {
+    eyebrow: '網站搜尋',
+    title: '搜尋產品、消息與下載資料',
+    placeholder: '輸入產品、品牌或關鍵字',
+    submit: '搜尋',
+    prompt: '請輸入關鍵字，搜尋公開產品、最新消息與下載資料。',
+    count: '找到 {count} 項結果',
+    none: '找不到相關的公開內容，請換個關鍵字或直接聯絡我們。',
+    catalog: '產品目錄',
+    news: '最新消息',
+    download: '下載資料',
+    downloadSummary: '可透過詢價系統索取最新產品資料。',
+  },
+  en: {
+    eyebrow: 'Search',
+    title: 'Search products, news and downloads',
+    placeholder: 'Enter a product, brand or keyword',
+    submit: 'Search',
+    prompt: 'Search publicly available products, news and downloadable product information.',
+    count: '{count} results found',
+    none: 'No public content matched that search. Try another term or contact us directly.',
+    catalog: 'Product catalog',
+    news: 'News',
+    download: 'Downloads',
+    downloadSummary: 'Use the inquiry system to request the latest product information.',
+  },
+};
+
+type PublicSearchResult = {
+  category: string;
+  href: string;
+  summary: string;
+  title: string;
+  score: number;
+};
+
+function searchScore(query: string, ...values: string[]) {
+  const text = values.join(' ').toLocaleLowerCase();
+  const terms = query.toLocaleLowerCase().split(/\s+/u).filter(Boolean);
+  if (!terms.length || !terms.every((term) => text.includes(term))) return 0;
+  const title = values[0].toLocaleLowerCase();
+  return terms.reduce(
+    (score, term) => score + (title.includes(term) ? 8 : 2),
+    0,
+  );
+}
+
+export async function PublicSearchRoute({
+  locale,
+  searchParams,
+}: LocalizedRouteProps) {
+  const db = database();
+  const [params, catalog, { payload: chrome }, news, downloads] =
+    await Promise.all([
+      searchParams,
+      managedPage(db, 'catalog', locale),
+      managedPage(db, 'chrome', locale),
+      listPublishedNewsForLocale(db, locale),
+      listPublishedDownloadsForLocale(db, locale),
+    ]);
+  const copy = searchCopy[locale];
+  const query = (first(params.q) || '').trim().slice(0, 100);
+  const catalogResults = [
+    ...Object.entries(catalog.payload.text.industryTitles).map(
+      ([id, title]) => ({
+        category: copy.catalog,
+        href: localizedPath(locale, '/catalog', `?type=industry&id=${id}`),
+        summary: catalog.payload.text.industry,
+        title,
+      }),
+    ),
+    ...Object.entries(catalog.payload.text.brandTitles).map(([id, title]) => ({
+      category: copy.catalog,
+      href: localizedPath(locale, '/catalog', `?type=brand&id=${id}`),
+      summary: catalog.payload.text.brand,
+      title,
+    })),
+  ];
+  const results: PublicSearchResult[] = query
+    ? [
+        ...catalogResults,
+        ...news.map((item) => ({
+          category: copy.news,
+          href: localizedPath(
+            locale,
+            '/news',
+            `?id=${encodeURIComponent(item.legacyId)}`,
+          ),
+          summary: item.lead,
+          title: item.title,
+        })),
+        ...downloads.map((item) => ({
+          category: copy.download,
+          href: localizedPath(
+            locale,
+            '/downloads',
+            `?id=${encodeURIComponent(item.legacyId)}`,
+          ),
+          summary: copy.downloadSummary,
+          title: item.title,
+        })),
+      ]
+        .map((item) => ({
+          ...item,
+          score: searchScore(query, item.title, item.summary),
+        }))
+        .filter((item) => item.score > 0)
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            left.title.localeCompare(right.title, locale),
+        )
+        .slice(0, 40)
+    : [];
+  return (
+    <PublicInnerPage
+      locale={locale}
+      path="/search"
+      chrome={chrome}
+      title={copy.title}
+      eyebrow={copy.eyebrow}
+      breadcrumbs={[{ label: copy.eyebrow }]}
+      contentClassName="search-page"
+    >
+      <section className="original-content-panel original-search-panel">
+        <search>
+          <form action={localizedPath(locale, '/search')} method="get">
+            <label htmlFor="site-search-query">{copy.title}</label>
+            <div>
+              <input
+                id="site-search-query"
+                name="q"
+                type="search"
+                defaultValue={query}
+                maxLength={100}
+                placeholder={copy.placeholder}
+              />
+              <button type="submit">{copy.submit}</button>
+            </div>
+          </form>
+        </search>
+        {!query ? <p className="search-empty">{copy.prompt}</p> : null}
+        {query ? (
+          <p className="search-summary">
+            {copy.count.replace('{count}', String(results.length))}
+          </p>
+        ) : null}
+        {query && !results.length ? (
+          <p className="search-empty">{copy.none}</p>
+        ) : null}
+        {results.length ? (
+          <div className="search-results">
+            {results.map((result) => (
+              <article key={result.href}>
+                <span>{result.category}</span>
+                <h2>
+                  <a href={result.href}>{result.title}</a>
+                </h2>
+                <p>{result.summary}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    </PublicInnerPage>
+  );
+}
+
 export async function PublicDownloadsRoute({
   locale,
   searchParams,

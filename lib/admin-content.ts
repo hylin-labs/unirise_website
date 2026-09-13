@@ -80,7 +80,6 @@ export function buildAdminContentPayload(editor: AdminContentEditor) {
   return {
     ...idField(editor.id),
     title: editor.title,
-    href: editor.href,
     body: editor.body,
     tags: editor.tagsText
       .split(',')

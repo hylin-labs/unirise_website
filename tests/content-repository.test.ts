@@ -149,7 +149,6 @@ describe('managed content repository', () => {
     ).toEqual({
       id: 'knowledge-1',
       title: 'Answer',
-      href: '/contact',
       body: 'Source body',
       tags: ['contact', 'service'],
       status: 'draft',
@@ -980,6 +979,22 @@ describe('managed content repository', () => {
     ).rejects.toBeInstanceOf(ContentValidationError);
     expect(database.rows('managed_downloads')).toEqual([]);
     expect(database.rows('admin_audit_log')).toEqual([]);
+  });
+
+  it('uses the stable contact destination when chat knowledge omits an internal source URL', async () => {
+    const database = new ContentDatabase();
+    const saved = await saveKnowledge(
+      database.d1,
+      {
+        title: 'Assistant answer',
+        body: 'This answer is available to the website assistant.',
+        tags: ['assistant'],
+        status: 'draft',
+      },
+      admin,
+    );
+
+    expect(saved.href).toBe('/contact');
   });
 
   it('assigns a new public news number when the administrator leaves it blank', async () => {

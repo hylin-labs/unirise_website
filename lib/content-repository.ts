@@ -56,7 +56,7 @@ export type LocalizedKnowledgeSource = KnowledgeSource & LocalizationMetadata;
 export type KnowledgeInput = {
   id?: string;
   title: string;
-  href: string;
+  href?: string;
   body: string;
   tags: string[];
   status: ContentStatus;
@@ -301,6 +301,14 @@ function legacyId(value: unknown) {
     throw new ContentValidationError('legacyId must contain only digits');
   }
   return normalized;
+}
+
+// Knowledge links are used only by the assistant to point visitors toward a
+// public page. Editors should not need to understand or maintain this internal
+// implementation detail, so missing values receive a stable local destination.
+function knowledgeHref(value: unknown) {
+  if (value == null || value === '') return '/contact';
+  return safeUrl(value, 'href');
 }
 
 async function generatedNewsLegacyId(db: D1Database) {
@@ -720,7 +728,7 @@ export async function saveKnowledge(
   const content = inputRecord(input);
   const id = recordId(content.id);
   const title = requiredText(content.title, 'title', 160);
-  const href = safeUrl(content.href, 'href');
+  const href = knowledgeHref(content.href);
   const body = requiredText(content.body, 'body', 8000);
   const tags = textList(content.tags, 'tags', 12);
   const requestedStatus = contentStatus(content.status);

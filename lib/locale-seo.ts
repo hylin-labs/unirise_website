@@ -31,6 +31,10 @@ const pageCopy: Record<
       title: '下載專區 | 合軒科技有限公司',
       description: '索取合軒科技食品分選、X光檢測與回收再生產品資料。',
     },
+    '/search': {
+      title: '網站搜尋 | 合軒科技有限公司',
+      description: '搜尋合軒科技的產品、最新消息與下載資料。',
+    },
     '/contact': {
       title: '聯絡我們 | 合軒科技有限公司',
       description: '聯絡合軒科技，洽詢食品分選、X光檢測與回收再生方案。',
@@ -60,6 +64,11 @@ const pageCopy: Record<
       title: 'Downloads | Unirise Technology Inc.',
       description:
         'Request Unirise product information for food sorting, X-ray inspection, and recycling solutions.',
+    },
+    '/search': {
+      title: 'Search | Unirise Technology Inc.',
+      description:
+        'Search Unirise products, news, and downloadable product information.',
     },
     '/contact': {
       title: 'Contact Us | Unirise Technology Inc.',

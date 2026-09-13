@@ -20,7 +20,7 @@ it('uses one public inventory for route coverage while excluding non-indexable v
   const routes = bilingualRouteInventory(inputs);
   const sitemapRoutes = bilingualSitemapRouteInventory(inputs);
   const urls = localizedSitemapEntries(inputs).map(({ url }) => url);
-  expect(PUBLIC_PATHS).toHaveLength(6);
+  expect(PUBLIC_PATHS).toHaveLength(7);
   const publicFolders = readdirSync(resolve('app'), { withFileTypes: true })
     .filter(
       (entry) =>

@@ -99,7 +99,7 @@ export function OriginalHeader({
             {chrome.text.address}
           </a>
           <a href={localizedPath(locale, '/contact')}>{chrome.text.contact}</a>
-          <a href={localizedPath(locale, '/catalog')}>
+          <a href={localizedPath(locale, '/search')}>
             <i className="original-fa original-fa-search" aria-hidden="true" />
             {chrome.text.search}
           </a>
@@ -117,8 +117,8 @@ export function OriginalHeader({
             <i className="original-fa original-fa-cart" aria-hidden="true" />
             {chrome.text.cart}
           </a>
-          <button type="button">{chrome.text.language}</button>
-          <span>
+          <span className="original-language-label">{chrome.text.language}</span>
+          <span className="original-language-switcher">
             <LanguageSwitcher pathname={pathname} />
           </span>
         </div>

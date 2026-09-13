@@ -33,7 +33,7 @@ export function LanguageSwitcher({
   }, [pathname]);
 
   return (
-    <nav aria-label="Language">
+    <nav aria-label="Language" className="language-switcher">
       {(['zh-TW', 'en'] as const).map((locale) => {
         const href = localizedPath(
           locale,
