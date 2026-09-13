@@ -7,7 +7,7 @@ import {
   type PublicPath,
 } from './localized-route';
 
-const FALLBACK_SITE_ORIGIN = 'https://unirise.craniai.chatgpt.site';
+const FALLBACK_SITE_ORIGIN = 'https://unirise.craniai.com';
 
 const pageCopy: Record<
   Locale,
