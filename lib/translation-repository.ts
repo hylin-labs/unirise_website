@@ -4,6 +4,7 @@ import {
   ContentConflictError,
   ContentValidationError,
 } from './content-repository';
+import { englishSeedPayload } from './english-seed';
 import type { Locale } from './locales';
 import type { TranslationResource } from './translation-admin';
 import {
@@ -326,19 +327,20 @@ function resolveEnglishContent(
     try {
       // Outdated English prose stays public, but changed literal links must not
       // send readers to old assets or products. Those use the explicit fallback.
-      validateTranslationPayload(translation.payload, {
+      const payload = englishSeedPayload({
+        ...translation.payload,
+        literals: source.payload.literals,
+      } as TranslationPayload);
+      validateTranslationPayload(payload, {
         ...source,
-        payload: {
-          ...translation.payload,
-          literals: source.payload.literals,
-        } as TranslationPayload,
+        payload,
       });
       const { status, sourceVersion, origin, translatedAt } = translation;
       return {
         source,
         requestedLocale: locale,
         locale,
-        payload: translation.payload,
+        payload,
         missing: false,
         outdated:
           translation.outdated ||
