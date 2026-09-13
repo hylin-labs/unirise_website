@@ -1324,6 +1324,9 @@ html[lang='en'] .original-nav-item > a {
 .original-mobile-toggle {
   display: none;
 }
+.original-mobile-utilities {
+  display: none;
+}
 .original-hero {
   position: relative;
   width: 100%;
@@ -2074,6 +2077,55 @@ html[lang='en'] .original-nav-item > a {
   }
   .original-nav-list.open {
     display: block;
+  }
+  .original-mobile-utilities {
+    min-height: 64px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border-bottom: 1px solid rgb(255 255 255 / 28%);
+    background: #a81118;
+  }
+  .original-mobile-utilities > a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .original-mobile-language {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+    font-size: 13px;
+  }
+  .original-mobile-language .language-switcher {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 65%);
+    border-radius: 3px;
+  }
+  .original-mobile-language .language-switcher a {
+    min-height: 42px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .original-mobile-language .language-switcher a + a {
+    border-left: 1px solid rgb(255 255 255 / 65%);
+  }
+  .original-mobile-language .language-switcher a[aria-current='page'] {
+    background: #fff;
+    color: var(--original-red);
   }
   .original-nav-item {
     position: relative;

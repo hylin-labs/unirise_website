@@ -134,6 +134,16 @@ export function OriginalHeader({
           {mobileMenu ? <X /> : <Menu />}
         </button>
         <div className={`original-nav-list ${mobileMenu ? 'open' : ''}`}>
+          <div className="original-mobile-utilities">
+            <a href={localizedPath(locale, '/search')}>
+              <i className="original-fa original-fa-search" aria-hidden="true" />
+              {chrome.text.search}
+            </a>
+            <span className="original-mobile-language">
+              <span>{chrome.text.language}</span>
+              <LanguageSwitcher pathname={pathname} />
+            </span>
+          </div>
           <div
             className={`original-nav-item ${mobilePanel === 'industry' ? 'mobile-open' : ''}`}
           >
