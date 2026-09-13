@@ -6,6 +6,7 @@ import type { LocalizedNews } from '../lib/content-repository';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
 import { stablePublicImage } from '../lib/public-image';
+import { youtubeThumbnailUrl } from '../lib/youtube';
 import type { ChromePayload, HomePayload } from '../lib/translation-types';
 
 /* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- The reproduced public homepage retains native anchors, original asset dimensions, and layout classes to preserve source fidelity. */
@@ -273,7 +274,10 @@ export function PublicHome({
                     )}
                   >
                     <img
-                      src={stablePublicImage(item.imageUrl)}
+                      src={
+                        youtubeThumbnailUrl(item.imageUrl) ??
+                        stablePublicImage(item.imageUrl)
+                      }
                       alt={item.title}
                     />
                   </a>

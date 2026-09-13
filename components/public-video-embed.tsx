@@ -2,13 +2,9 @@
 
 import { Play } from 'lucide-react';
 import { useState } from 'react';
+import { youtubeEmbedUrl, youtubeWatchUrl } from '../lib/youtube';
 
 /* oxlint-disable next/no-img-element -- The poster may be an administrator-managed public image URL. */
-
-function publicVideoUrl(src: string) {
-  const match = src.match(/youtube\.com\/embed\/([^?&/]+)/i);
-  return match ? `https://www.youtube.com/watch?v=${match[1]}` : src;
-}
 
 export function PublicVideoEmbed({
   label,
@@ -26,12 +22,18 @@ export function PublicVideoEmbed({
   title: string;
 }) {
   const [playing, setPlaying] = useState(false);
+  const embedUrl = youtubeEmbedUrl(src);
+  const publicUrl = youtubeWatchUrl(src);
   return (
-    <section className="video-section" aria-label={label}>
+    <section
+      className="video-section"
+      aria-label={label}
+      data-video-src={embedUrl}
+    >
       <div className="video-wrap">
         {playing ? (
           <iframe
-            src={`${src}${src.includes('?') ? '&' : '?'}autoplay=1`}
+            src={`${embedUrl}${embedUrl.includes('?') ? '&' : '?'}autoplay=1`}
             title={title}
             allow="autoplay; encrypted-media; picture-in-picture"
             allowFullScreen
@@ -51,7 +53,7 @@ export function PublicVideoEmbed({
           </button>
         )}
       </div>
-      <a href={publicVideoUrl(src)} target="_blank" rel="noreferrer">
+      <a href={publicUrl} target="_blank" rel="noreferrer">
         {openLabel}
       </a>
     </section>

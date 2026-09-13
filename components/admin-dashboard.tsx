@@ -12,6 +12,7 @@ import {
   type AdminContentKind,
 } from '../lib/admin-content';
 import type { DashboardSnapshot } from '../lib/analytics';
+import { youtubeThumbnailUrl } from '../lib/youtube';
 import styles from './admin-dashboard.module.css';
 import { TranslationManager } from './translation-manager';
 
@@ -620,6 +621,10 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                                 })
                               }
                             />
+                            <small>
+                              支援 YouTube 一般網址、youtu.be 短網址、Shorts
+                              及嵌入網址。
+                            </small>
                           </label>
                           <label className={styles.fullField}>
                             重點（每行一項）
@@ -711,7 +716,13 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                         </span>
                         {kind === 'news' && editor.imageUrl ? (
                           /* oxlint-disable-next-line next/no-img-element -- Admin previews user-selected local or remote URLs without an optimization allowlist. */
-                          <img src={editor.imageUrl} alt="新聞圖片預覽" />
+                          <img
+                            src={
+                              youtubeThumbnailUrl(editor.imageUrl) ??
+                              editor.imageUrl
+                            }
+                            alt="新聞圖片預覽"
+                          />
                         ) : null}
                         <h3>{editor.title || '尚未輸入標題'}</h3>
                         <p>

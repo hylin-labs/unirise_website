@@ -8,6 +8,7 @@ import {
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
 import { stablePublicImage } from '../lib/public-image';
+import { youtubeThumbnailUrl, youtubeVideoId } from '../lib/youtube';
 import { getLocalizedContent } from '../lib/translation-repository';
 import type {
   CatalogPayload,
@@ -238,6 +239,12 @@ export async function PublicNewsRoute({
       : null;
   const posts = post ? [] : await listPublishedNewsForLocale(db, locale);
   const copy = newsCopy[locale];
+  const postVideoUrl =
+    post?.videoUrl ??
+    (post && youtubeVideoId(post.imageUrl) ? post.imageUrl : null);
+  const postImageUrl = post
+    ? (youtubeThumbnailUrl(post.imageUrl) ?? stablePublicImage(post.imageUrl))
+    : '';
   return (
     <PublicInnerPage
       locale={locale}
@@ -251,7 +258,7 @@ export async function PublicNewsRoute({
       {post ? (
         <article className="article article-detail">
           <img
-            src={stablePublicImage(post.imageUrl)}
+            src={postImageUrl}
             alt={post.title}
             decoding="async"
           />
@@ -263,13 +270,13 @@ export async function PublicNewsRoute({
               <li key={highlight}>{highlight}</li>
             ))}
           </ul>
-          {post.videoUrl && (
+          {postVideoUrl && (
             <PublicVideoEmbed
               label={`${post.title} ${copy.video}`}
               openLabel={copy.openVideo}
               playLabel={copy.playVideo}
-              poster={stablePublicImage(post.imageUrl)}
-              src={post.videoUrl}
+              poster={postImageUrl}
+              src={postVideoUrl}
               title={`${post.title} ${copy.video}`}
             />
           )}
@@ -308,7 +315,10 @@ export async function PublicNewsRoute({
                 )}
               >
                 <img
-                  src={stablePublicImage(item.imageUrl)}
+                  src={
+                    youtubeThumbnailUrl(item.imageUrl) ??
+                    stablePublicImage(item.imageUrl)
+                  }
                   alt={item.title}
                   loading="lazy"
                   decoding="async"
