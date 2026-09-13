@@ -42,6 +42,22 @@ class FakePreparedStatement {
   }
 
   async run(): Promise<FakeResult<Row>> {
+    const updateMatch = this.query.match(
+      /update\s+(\w+)\s+set\s+(\w+)\s*=\s*([^\s]+)\s+where\s+(\w+)\s*=\s*\?/i,
+    );
+    if (updateMatch) {
+      const [, table, column, rawValue, whereColumn] = updateMatch;
+      const value = rawValue === '?' ? this.values[0] : Number(rawValue);
+      const whereValue = this.values[rawValue === '?' ? 1 : 0];
+      let changes = 0;
+      for (const row of this.rows.get(table) ?? []) {
+        if (row[whereColumn] !== whereValue) continue;
+        row[column] = value;
+        changes += 1;
+      }
+      return result([], changes);
+    }
+
     const match = this.query.match(/insert(?:\s+or\s+ignore)?\s+into\s+(\w+)\s*\(([^)]+)\)\s*values\s*\(([^)]+)\)/i);
     if (!match) throw new Error(`FakeD1 does not support this SQL: ${this.query}`);
     const columns = match[2].split(',').map((column) => column.trim());

@@ -28,6 +28,30 @@ describe('legacy content seed', () => {
     });
     expect(count).toEqual({ count: 1 });
   });
+
+  it('migrates the published SBI article and its YouTube video', async () => {
+    const db = createFakeD1();
+    await seedLegacyContent(db);
+
+    const row = await db
+      .prepare(
+        'SELECT legacy_id, title, video_url, status FROM managed_news WHERE legacy_id = ?',
+      )
+      .bind('111')
+      .first<{
+        legacy_id: string;
+        title: string;
+        video_url: string;
+        status: string;
+      }>();
+
+    expect(row).toEqual({
+      legacy_id: '111',
+      title: '厚薄測量儀 SBI',
+      video_url: 'https://www.youtube.com/watch?v=iuZ4P8mqLkw',
+      status: 'published',
+    });
+  });
 });
 
 describe('admin schema migration', () => {
