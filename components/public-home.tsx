@@ -5,6 +5,7 @@ import { OriginalFooter, OriginalHeader } from '../app/original-shell';
 import type { LocalizedNews } from '../lib/content-repository';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
+import { stablePublicImage } from '../lib/public-image';
 import type { ChromePayload, HomePayload } from '../lib/translation-types';
 
 /* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- The reproduced public homepage retains native anchors, original asset dimensions, and layout classes to preserve source fidelity. */
@@ -271,7 +272,10 @@ export function PublicHome({
                       `?id=${item.legacyId}`,
                     )}
                   >
-                    <img src={item.imageUrl} alt={item.title} />
+                    <img
+                      src={stablePublicImage(item.imageUrl)}
+                      alt={item.title}
+                    />
                   </a>
                   <div>
                     <h3>{item.title}</h3>

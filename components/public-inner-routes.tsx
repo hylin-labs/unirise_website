@@ -7,6 +7,7 @@ import {
 } from '../lib/content-repository';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
+import { stablePublicImage } from '../lib/public-image';
 import { getLocalizedContent } from '../lib/translation-repository';
 import type {
   CatalogPayload,
@@ -244,7 +245,11 @@ export async function PublicNewsRoute({
     >
       {post ? (
         <article className="article article-detail">
-          <img src={post.imageUrl} alt={post.title} decoding="async" />
+          <img
+            src={stablePublicImage(post.imageUrl)}
+            alt={post.title}
+            decoding="async"
+          />
           <time>{copy.label} · {post.legacyId}</time>
           <h2>{post.title}</h2>
           <p className="article-lead">{post.lead}</p>
@@ -297,7 +302,7 @@ export async function PublicNewsRoute({
                 )}
               >
                 <img
-                  src={item.imageUrl}
+                  src={stablePublicImage(item.imageUrl)}
                   alt={item.title}
                   loading="lazy"
                   decoding="async"
