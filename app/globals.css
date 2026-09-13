@@ -1238,6 +1238,12 @@ a {
   font-weight: 400;
   white-space: nowrap;
 }
+html[lang='en'] .original-nav-item > a {
+  width: auto;
+  min-width: 128px;
+  padding: 0 18px;
+  font-size: 16px;
+}
 .original-nav-item:hover > a {
   background: #ffe5db;
   color: #c7161d;
