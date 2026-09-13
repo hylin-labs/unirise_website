@@ -18,6 +18,7 @@ import type {
 import { PublicInnerPage } from './public-inner-page';
 import { ContextualInquiryEntry } from './contextual-inquiry-entry';
 import { PublicInquiryForm } from './public-inquiry-form';
+import { PublicVideoEmbed } from './public-video-embed';
 import { SolutionFinder } from './solution-finder';
 
 /* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- Preserve the original catalog, news, downloads, and contact markup and native links. */
@@ -203,6 +204,8 @@ const newsCopy = {
     eyebrow: '最新消息',
     label: '最新消息',
     video: '影片',
+    playVideo: '播放影片',
+    openVideo: '在 YouTube 開啟影片',
     back: '← 回到最新消息',
     inquire: '洽詢更多資訊',
     more: '了解更多 →',
@@ -211,6 +214,8 @@ const newsCopy = {
     eyebrow: 'News',
     label: 'NEWS',
     video: 'video',
+    playVideo: 'Play video',
+    openVideo: 'Open video on YouTube',
     back: '← Back to news',
     inquire: 'Request more information',
     more: 'Learn more →',
@@ -259,13 +264,14 @@ export async function PublicNewsRoute({
             ))}
           </ul>
           {post.videoUrl && (
-            <div className="video-wrap">
-              <iframe
-                src={post.videoUrl}
-                title={`${post.title} ${copy.video}`}
-                allowFullScreen
-              />
-            </div>
+            <PublicVideoEmbed
+              label={`${post.title} ${copy.video}`}
+              openLabel={copy.openVideo}
+              playLabel={copy.playVideo}
+              poster={stablePublicImage(post.imageUrl)}
+              src={post.videoUrl}
+              title={`${post.title} ${copy.video}`}
+            />
           )}
           <div className="article-actions">
             <a href={localizedPath(locale, '/news')}>{copy.back}</a>
