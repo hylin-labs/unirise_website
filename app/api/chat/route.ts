@@ -68,6 +68,14 @@ function visibleAnswer(answer: string) {
   return answer.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '').trim();
 }
 
+function reportChatProviderFailure(
+  kind: 'http' | 'response' | 'request',
+  details: Record<string, string | number | boolean>,
+) {
+  // 僅保留可用於診斷的中繼資料，絕不可記錄金鑰、訪客問題或檢索內容。
+  console.error('chat_provider_failure', { kind, ...details });
+}
+
 export function createChatHandler({
   db,
   groqApiKey,
@@ -198,15 +206,28 @@ export function createChatHandler({
         },
       );
 
-      if (!upstream.ok) return json('chat_service_unavailable', 502);
+      if (!upstream.ok) {
+        reportChatProviderFailure('http', {
+          status: upstream.status,
+          contentType: upstream.headers.get('content-type') ?? 'unknown',
+        });
+        return json('chat_service_unavailable', 502);
+      }
       const response = (await upstream.json()) as {
         choices?: Array<{ message?: { content?: unknown } }>;
       };
       const answer = response.choices?.[0]?.message?.content;
-      if (typeof answer !== 'string')
+      if (typeof answer !== 'string') {
+        reportChatProviderFailure('response', {
+          hasChoices: Array.isArray(response.choices),
+        });
         return json('chat_service_unavailable', 502);
+      }
       const cleanedAnswer = visibleAnswer(answer);
-      if (!cleanedAnswer) return json('chat_service_unavailable', 502);
+      if (!cleanedAnswer) {
+        reportChatProviderFailure('response', { hasChoices: true });
+        return json('chat_service_unavailable', 502);
+      }
       if (visitorHash) {
         try {
           await Promise.all([
@@ -234,7 +255,10 @@ export function createChatHandler({
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );
-    } catch {
+    } catch (error) {
+      reportChatProviderFailure('request', {
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
       return json('chat_service_unavailable', 502);
     }
   };
