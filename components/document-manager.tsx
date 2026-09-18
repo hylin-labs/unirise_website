@@ -1,11 +1,12 @@
 'use client';
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import type { AdminIdentity } from '../lib/admin-auth';
 import type { KnowledgeDocument } from '../lib/document-repository';
 import { redirectAdminUnauthorized } from '../lib/admin-content';
 import styles from './admin-dashboard.module.css';
+
+/* oxlint-disable next/no-html-link-for-pages -- Standard anchors avoid Vinext's failing client-side prefetch for these administrative routes. */
 
 const accessLabels = {
   public: '公開知識（可供審核後的網站助理使用）',
@@ -147,23 +148,23 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   return (
     <main className={styles.dashboard}>
       <aside className={styles.sidebar}>
-        <Link
+        <a
           className={styles.dashboardBrand}
           href="/admin"
           aria-label="返回管理後台"
         >
           合軒科技管理後台
-        </Link>
+        </a>
         <nav aria-label="文件管理導覽">
-          <Link
+          <a
             className={`${styles.navLink} ${styles.activeNav}`}
             href="/admin/documents"
           >
             技術文件
-          </Link>
-          <Link className={styles.navLink} href="/admin">
+          </a>
+          <a className={styles.navLink} href="/admin">
             返回管理總覽
-          </Link>
+          </a>
         </nav>
         <div className={styles.account}>
           <span>登入身分</span>
