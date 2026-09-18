@@ -2,6 +2,7 @@
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import type { AdminIdentity } from '../lib/admin-auth';
 import {
   buildAdminContentPayload,
@@ -334,6 +335,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                 : ''}
             </button>
           ))}
+          <Link className={styles.navLink} href="/admin/documents">
+            技術文件
+          </Link>
         </nav>
         <div className={styles.account}>
           <span>登入身分</span>
@@ -691,9 +695,7 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                         type="submit"
                         disabled={updating === `save:${kind}`}
                       >
-                        {updating === `save:${kind}`
-                          ? '儲存中…'
-                          : '儲存為草稿'}
+                        {updating === `save:${kind}` ? '儲存中…' : '儲存為草稿'}
                       </button>
                       {editor.status === 'draft' ? (
                         <button
@@ -785,9 +787,15 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                             <button
                               className={styles.deleteButton}
                               type="button"
-                              disabled={updating === `delete:${kind}:${record.id}`}
+                              disabled={
+                                updating === `delete:${kind}:${record.id}`
+                              }
                               onClick={() =>
-                                void deleteContent(kind, record.id, record.title)
+                                void deleteContent(
+                                  kind,
+                                  record.id,
+                                  record.title,
+                                )
                               }
                             >
                               {updating === `delete:${kind}:${record.id}`

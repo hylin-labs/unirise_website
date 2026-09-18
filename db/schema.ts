@@ -20,6 +20,8 @@ export const uniriseSchema = {
   contentTranslations: 'content_translations',
   translationJobs: 'translation_jobs',
   translationJobItems: 'translation_job_items',
+  documents: 'knowledge_documents',
+  documentChunks: 'knowledge_document_chunks',
 } as const;
 
 export type VisitorStats = {
