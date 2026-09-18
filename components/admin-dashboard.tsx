@@ -2,7 +2,6 @@
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import type { AdminIdentity } from '../lib/admin-auth';
 import {
   buildAdminContentPayload,
@@ -335,9 +334,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                 : ''}
             </button>
           ))}
-          <Link className={styles.navLink} href="/admin/documents">
+          <a className={styles.navLink} href="/admin/documents">
             技術文件
-          </Link>
+          </a>
         </nav>
         <div className={styles.account}>
           <span>登入身分</span>
