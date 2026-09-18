@@ -145,6 +145,50 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
     }
   }
 
+  async function extract(record: KnowledgeDocument) {
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/admin/document-extractions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: record.id }),
+      });
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('extraction_failed');
+      const result = (await response.json()) as {
+        pageCount: number;
+        chunkCount: number;
+      };
+      setNotice(
+        `文字擷取完成：${result.pageCount} 頁、${result.chunkCount} 個段落。請先人工審核，再提供網站助理使用。`,
+      );
+      await load();
+    } catch {
+      setError(
+        '文字擷取未完成。若文件是掃描檔，下一階段需要 OCR；請稍後再試或改用可搜尋文字的 PDF。',
+      );
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function assistantStatusLabel(record: KnowledgeDocument) {
+    if (record.assistantStatus === 'excluded') return '不進入助理';
+    if (record.assistantStatus === 'processing') return '文字擷取中…';
+    if (record.assistantStatus === 'review_required') {
+      return `待人工審核${record.extractionPageCount ? `・${record.extractionPageCount} 頁` : ''}`;
+    }
+    if (record.assistantStatus === 'approved') return '已加入助理';
+    if (record.assistantStatus === 'failed')
+      return record.extractionError === 'no_extractable_text'
+        ? '找不到可擷取文字（需要 OCR）'
+        : '擷取失敗，可重新嘗試';
+    return '尚未開始文字擷取';
+  }
+
   return (
     <main className={styles.dashboard}>
       <aside className={styles.sidebar}>
@@ -290,11 +334,24 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                     {accessLabels[record.accessLevel]}
                   </span>
                   <div className={styles.rowActions}>
-                    <span>
-                      {record.assistantStatus === 'excluded'
-                        ? '不進入助理'
-                        : '待文字擷取'}
-                    </span>
+                    <span>{assistantStatusLabel(record)}</span>
+                    {record.accessLevel !== 'confidential' ? (
+                      <button
+                        type="button"
+                        onClick={() => void extract(record)}
+                        disabled={
+                          saving || record.assistantStatus === 'processing'
+                        }
+                      >
+                        {record.assistantStatus === 'processing'
+                          ? '擷取中…'
+                          : record.assistantStatus === 'review_required'
+                            ? '重新擷取'
+                            : record.assistantStatus === 'failed'
+                              ? '重新嘗試'
+                              : '開始文字擷取'}
+                      </button>
+                    ) : null}
                     <button
                       className={styles.deleteButton}
                       type="button"

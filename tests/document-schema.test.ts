@@ -17,6 +17,15 @@ describe('document knowledge storage', () => {
     expect(migration).toContain('ON DELETE CASCADE');
   });
 
+  it('stores extraction progress separately from the original PDF', async () => {
+    const migration = await readFile(
+      resolve('drizzle/0005_add_document_extraction_metadata.sql'),
+      'utf8',
+    );
+    expect(migration).toContain('extraction_page_count');
+    expect(migration).toContain('extraction_error');
+  });
+
   it('rejects non-PDF files and preserves confidential classification', () => {
     expect(() =>
       createDocumentInput({

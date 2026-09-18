@@ -16,6 +16,8 @@
    2. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0001_add_chat_rate_limits.sql`
    3. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0002_add_admin_content_leads_analytics.sql`
    4. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0003_add_bilingual_content.sql`
+   5. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0004_add_document_knowledge.sql`
+   6. `npx wrangler d1 execute site-creator-d1 --local --persist-to .wrangler/state --config dist/server/wrangler.json --file drizzle/0005_add_document_extraction_metadata.sql`
 
    Migration `0002` is schema-only. On the first Worker request, the idempotent runtime initializer creates the `hungyu@gmail.com` allowlist entry and imports the legacy public content. A new Worker isolate can run that safe initializer again; `INSERT OR IGNORE` keeps the resulting data stable.
 
@@ -31,7 +33,7 @@ Chinese source edits flag older English for review without replacing human edits
 
 ## Bilingual release checks
 
-Run `npm test`, `npm run lint`, `npm run build`, `git diff --check`, `npm run test:local-worker-smoke`, then `node scripts/smoke-bilingual-local-worker.mjs`, in that order. The shared `lib/public-route-inventory.mjs` supplies public route families for routing, sitemap expectations, and smoke coverage. The bilingual smoke follows rendered catalog/query links and checks original local assets. It uses a temporary copy of the built Worker, temporary sentinel configuration, migrations through `0003`, and isolated local D1; Groq responses are mocked and other outbound Worker fetches are blocked. Cleanup removes only that temporary workspace. It never reads the root `.dev.vars` or applies remote migrations.
+Run `npm test`, `npm run lint`, `npm run build`, `git diff --check`, `npm run test:local-worker-smoke`, then `node scripts/smoke-bilingual-local-worker.mjs`, in that order. The shared `lib/public-route-inventory.mjs` supplies public route families for routing, sitemap expectations, and smoke coverage. The bilingual smoke follows rendered catalog/query links and checks original local assets. It uses a temporary copy of the built Worker, temporary sentinel configuration, migrations through `0005`, and isolated local D1; Groq responses are mocked and other outbound Worker fetches are blocked. Cleanup removes only that temporary workspace. It never reads the root `.dev.vars` or applies remote migrations.
 
 Before publishing, manually check desktop/mobile menus, carousel, language switching with query and anchor, news/download details, inquiry forms, source links, visitor labels, and the translation manager. Automated route checks do not establish pixel-level visual parity. A verified Resend sender is a separate, pre-existing production prerequisite; successful local bilingual tests do not prove email delivery.
 
@@ -54,10 +56,10 @@ Then manually check the administrator login, publish a knowledge entry, ask the 
 Production release is blocked until all of the following are complete:
 
 1. Verify the `RESEND_FROM_EMAIL` sender/domain in Resend.
-2. Build the site and inspect the Sites deployment package. The supported migration bundle is `dist/.openai/drizzle/0000_add_visitor_statistics.sql`, `dist/.openai/drizzle/0001_add_chat_rate_limits.sql`, `dist/.openai/drizzle/0002_add_admin_content_leads_analytics.sql`, and `dist/.openai/drizzle/0003_add_bilingual_content.sql`. `.openai/hosting.json` declares the logical D1 binding as `DB`; Sites owns the bound production database and migration history.
+2. Build the site and inspect the Sites deployment package. The supported migration bundle is `dist/.openai/drizzle/0000_add_visitor_statistics.sql` through `dist/.openai/drizzle/0005_add_document_extraction_metadata.sql`. `.openai/hosting.json` declares the logical D1 binding as `DB`; Sites owns the bound production database and migration history.
 3. Use the existing Sites deploy pipeline to preview and apply that packaged migration bundle. Do not run arbitrary remote `wrangler d1 execute` commands against a production database.
 
-   - **Fresh production database:** confirm the Sites migration preview contains the four files in ascending order, then let the Sites deployment apply them once. The first Worker request performs the safe runtime content initialization.
+   - **Fresh production database:** confirm the Sites migration preview contains all six files in ascending order, then let the Sites deployment apply them once. The first Worker request performs the safe runtime content initialization.
    - **Existing production database:** review the Sites migration status and generated migration plan before release. Apply only the package migrations the Sites pipeline marks as pending. If the recorded migration state or schema is ambiguous, stop and reconcile it through the deployment owner; never rerun a migration merely because object names appear to exist.
 
 4. For local-only troubleshooting, use schema SQL and `PRAGMA` output rather than object-name checks as evidence. For example, compare `PRAGMA table_info('admin_users')` and `PRAGMA index_list('admin_sessions')` against `drizzle/0002_add_admin_content_leads_analytics.sql`; table or index names alone do not establish compatible columns, constraints, or migration state.

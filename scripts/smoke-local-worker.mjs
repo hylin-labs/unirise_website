@@ -208,6 +208,8 @@ try {
     '0001_add_chat_rate_limits.sql',
     '0002_add_admin_content_leads_analytics.sql',
     '0003_add_bilingual_content.sql',
+    '0004_add_document_knowledge.sql',
+    '0005_add_document_extraction_metadata.sql',
   ]) {
     await run(node, [
       wrangler,

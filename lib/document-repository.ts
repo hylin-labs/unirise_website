@@ -31,6 +31,9 @@ export type KnowledgeDocument = {
   assistantStatus: DocumentAssistantStatus;
   mimeType: 'application/pdf';
   fileSize: number;
+  extractionPageCount: number | null;
+  extractionCharacters: number | null;
+  extractionError: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -45,8 +48,19 @@ type DocumentRow = {
   assistant_status: DocumentAssistantStatus;
   mime_type: 'application/pdf';
   file_size: number;
+  extraction_page_count: number | null;
+  extraction_characters: number | null;
+  extraction_error: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type ExtractionDocument = {
+  id: string;
+  storage_key: string;
+  source_language: DocumentLanguage;
+  access_level: DocumentAccessLevel;
+  assistant_status: DocumentAssistantStatus;
 };
 
 export class DocumentValidationError extends Error {
@@ -89,6 +103,9 @@ function rowToDocument(row: DocumentRow): KnowledgeDocument {
     assistantStatus: row.assistant_status,
     mimeType: row.mime_type,
     fileSize: row.file_size,
+    extractionPageCount: row.extraction_page_count,
+    extractionCharacters: row.extraction_characters,
+    extractionError: row.extraction_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -216,12 +233,126 @@ export async function createStoredDocument(
 export async function listDocuments(db: D1Database) {
   const rows = await db
     .prepare(
-      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, created_at, updated_at
+      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, extraction_page_count, extraction_characters, extraction_error, created_at, updated_at
        FROM ${uniriseSchema.documents}
        ORDER BY updated_at DESC`,
     )
     .all<DocumentRow>();
   return rows.results.map(rowToDocument);
+}
+
+export type ExtractedDocumentChunk = {
+  content: string;
+  pageStart: number;
+  pageEnd: number;
+};
+
+export async function findDocumentForExtraction(db: D1Database, id: string) {
+  if (typeof id !== 'string' || !id.trim())
+    throw new DocumentValidationError('id is required');
+  return db
+    .prepare(
+      `SELECT id, storage_key, source_language, access_level, assistant_status
+       FROM ${uniriseSchema.documents} WHERE id = ? LIMIT 1`,
+    )
+    .bind(id)
+    .first<ExtractionDocument>();
+}
+
+export async function markDocumentProcessing(
+  db: D1Database,
+  document: ExtractionDocument,
+  actor: AdminIdentity,
+) {
+  if (document.access_level === 'confidential')
+    throw new DocumentValidationError(
+      'confidential_documents_cannot_be_extracted',
+    );
+  if (document.assistant_status === 'processing')
+    throw new DocumentValidationError('document_extraction_already_processing');
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${uniriseSchema.documents}
+         SET assistant_status = 'processing', extraction_error = NULL, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, document.id),
+    auditStatement(db, actor, 'document.extraction_started', document.id, {}),
+  ]);
+}
+
+export async function completeDocumentExtraction(
+  db: D1Database,
+  document: ExtractionDocument,
+  chunks: ExtractedDocumentChunk[],
+  pageCount: number,
+  characterCount: number,
+  actor: AdminIdentity,
+) {
+  const now = new Date().toISOString();
+  const statements = [
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.documentChunks} WHERE document_id = ?`,
+      )
+      .bind(document.id),
+    ...chunks.map((chunk, index) =>
+      db
+        .prepare(
+          `INSERT INTO ${uniriseSchema.documentChunks} (id, document_id, chunk_number, page_start, page_end, language, content, extraction_method, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'text', 'review_required', ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          document.id,
+          index,
+          chunk.pageStart,
+          chunk.pageEnd,
+          document.source_language,
+          chunk.content,
+          now,
+          now,
+        ),
+    ),
+    db
+      .prepare(
+        `UPDATE ${uniriseSchema.documents}
+         SET assistant_status = 'review_required', extracted_at = ?, extraction_page_count = ?, extraction_characters = ?, extraction_error = NULL, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, pageCount, characterCount, now, document.id),
+    auditStatement(db, actor, 'document.extraction_completed', document.id, {
+      pageCount,
+      characterCount,
+      chunkCount: chunks.length,
+    }),
+  ];
+  for (let start = 0; start < statements.length; start += 80) {
+    await db.batch(statements.slice(start, start + 80));
+  }
+}
+
+export async function failDocumentExtraction(
+  db: D1Database,
+  document: ExtractionDocument,
+  actor: AdminIdentity,
+  reason: string,
+) {
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${uniriseSchema.documents}
+         SET assistant_status = 'failed', extraction_error = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(reason.slice(0, 240), now, document.id),
+    auditStatement(db, actor, 'document.extraction_failed', document.id, {
+      reason: reason.slice(0, 240),
+    }),
+  ]);
 }
 
 export async function findDocumentStorageKey(db: D1Database, id: string) {
