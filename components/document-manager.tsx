@@ -185,16 +185,27 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
             原始檔案僅保存在私有文件庫。公開文件仍必須完成文字擷取與人工審核，才會供網站助理回答。
           </p>
           <form className={styles.editorForm} onSubmit={upload}>
-            <label>
-              PDF 檔案
+            <div className={styles.documentUploadField}>
+              <span id="document-file-label">PDF 檔案</span>
               <input
+                id="document-file"
+                className={styles.fileInput}
                 type="file"
                 accept="application/pdf,.pdf"
+                aria-describedby="document-file-help"
                 onChange={(event) =>
                   chooseFile(event.currentTarget.files?.[0] ?? null)
                 }
               />
-            </label>
+              <label className={styles.filePicker} htmlFor="document-file">
+                選擇 PDF 檔案
+              </label>
+              <p className={styles.fileName} id="document-file-help">
+                {file
+                  ? `已選擇：${file.name}（${formatSize(file.size)}）`
+                  : '尚未選擇檔案（僅限 PDF，單一檔案最大 50 MB）'}
+              </p>
+            </div>
             <label>
               顯示名稱
               <input

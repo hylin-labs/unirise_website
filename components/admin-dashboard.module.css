@@ -348,6 +348,73 @@
   background: #c7161e;
   color: #fff;
 }
+.editorForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.editorForm > label,
+.documentUploadField {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: #555;
+  font-size: 14px;
+  font-weight: 700;
+}
+.editorForm input,
+.editorForm select {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+}
+.documentUploadField {
+  grid-column: 1 / -1;
+  padding: 18px;
+  border: 1px dashed #b7c7d8;
+  border-radius: 8px;
+  background: #f7fafc;
+}
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.filePicker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 46px;
+  padding: 10px 18px;
+  border: 1px solid #c7161e;
+  border-radius: 5px;
+  background: #c7161e;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1.2;
+}
+.filePicker:hover,
+.filePicker:focus-visible {
+  background: #a80f16;
+}
+.fileName {
+  margin: 0;
+  color: #5b6773;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
 .contentPreview {
   max-width: 720px;
   margin-top: 18px;
