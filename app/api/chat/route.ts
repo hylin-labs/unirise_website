@@ -33,6 +33,7 @@ const fallbackAnswers: Record<Locale, string> = {
 };
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
+type KnowledgeSource = Awaited<ReturnType<typeof retrieveSiteKnowledge>>[number];
 
 type ChatHandlerOptions = {
   db: D1Database;
@@ -68,12 +69,37 @@ function visibleAnswer(answer: string) {
   return answer.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '').trim();
 }
 
+function sourceFallbackAnswer(locale: Locale, sources: KnowledgeSource[]) {
+  const summary = sources
+    .slice(0, 3)
+    .map((source) => {
+      const content = source.content.replace(/\s+/g, ' ').trim().slice(0, 360);
+      return `• ${source.title}：${content}`;
+    })
+    .join('\n');
+  const closing =
+    locale === 'en'
+      ? 'For specifications, project suitability, or a quotation, please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
+      : '如需規格、適用性或報價，請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。';
+  return `${locale === 'en' ? 'Based on published website information:' : '依網站已公開的相關資訊：'}\n${summary}\n\n${closing}`;
+}
+
 function reportChatProviderFailure(
   kind: 'http' | 'response' | 'request',
   details: Record<string, string | number | boolean>,
 ) {
   // 僅保留可用於診斷的中繼資料，絕不可記錄金鑰、訪客問題或檢索內容。
   console.error('chat_provider_failure', { kind, ...details });
+}
+
+function sourceFallbackResponse(locale: Locale, sources: KnowledgeSource[]) {
+  return Response.json(
+    {
+      answer: sourceFallbackAnswer(locale, sources),
+      sources: sources.map(({ title, href }) => ({ title, href })),
+    },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
 
 export function createChatHandler({
@@ -211,7 +237,7 @@ export function createChatHandler({
           status: upstream.status,
           contentType: upstream.headers.get('content-type') ?? 'unknown',
         });
-        return json('chat_service_unavailable', 502);
+        return sourceFallbackResponse(locale, sources);
       }
       const response = (await upstream.json()) as {
         choices?: Array<{ message?: { content?: unknown } }>;
@@ -221,12 +247,12 @@ export function createChatHandler({
         reportChatProviderFailure('response', {
           hasChoices: Array.isArray(response.choices),
         });
-        return json('chat_service_unavailable', 502);
+        return sourceFallbackResponse(locale, sources);
       }
       const cleanedAnswer = visibleAnswer(answer);
       if (!cleanedAnswer) {
         reportChatProviderFailure('response', { hasChoices: true });
-        return json('chat_service_unavailable', 502);
+        return sourceFallbackResponse(locale, sources);
       }
       if (visitorHash) {
         try {
@@ -259,7 +285,7 @@ export function createChatHandler({
       reportChatProviderFailure('request', {
         errorName: error instanceof Error ? error.name : 'unknown',
       });
-      return json('chat_service_unavailable', 502);
+      return sourceFallbackResponse(locale, sources);
     }
   };
 }
