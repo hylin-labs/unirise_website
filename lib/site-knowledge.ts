@@ -91,6 +91,31 @@ function knowledgeScore(source: SiteKnowledgeSource, terms: string[]) {
   );
 }
 
+function technicalSpecificationScore(
+  source: SiteKnowledgeSource,
+  query: string,
+) {
+  if (
+    source.href ||
+    !/(電壓|伏特|供電|電源|voltage|volt|power supply)/i.test(query)
+  )
+    return 0;
+
+  const content = source.content.replace(/\s+/g, ' ');
+  let score = 0;
+
+  // 規格表的欄位比接線圖或零件清單更適合作為電壓問答依據。
+  if (/3\.3\s+Voltage\s+V\s+\d+(?:\.\d+)?/i.test(content)) score += 100;
+  if (/4\.2\s+Voltage\s+V\/Hz\s+\d+(?:\.\d+)?\/\d+(?:\.\d+)?/i.test(content))
+    score += 100;
+  if (/4\.3\s+Control voltage\s+V\s+\d+(?:\.\d+)?\s*(?:DC|AC)?/i.test(content))
+    score += 100;
+  if (/Voltage\s+V\s+\d+(?:\.\d+)?/i.test(content)) score += 30;
+  if (/Control voltage\s+V\s+\d+(?:\.\d+)?/i.test(content)) score += 30;
+
+  return score;
+}
+
 async function retrieveApprovedDocumentKnowledge(
   db: D1Database,
   query: string,
@@ -142,7 +167,12 @@ async function retrieveApprovedDocumentKnowledge(
         content: row.content,
         tags: [row.category, row.sourceLanguage, '技術文件'],
       };
-      return { source, score: knowledgeScore(source, terms) };
+      return {
+        source,
+        score:
+          knowledgeScore(source, terms) +
+          technicalSpecificationScore(source, query),
+      };
     })
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score)
@@ -183,7 +213,12 @@ export async function retrieveSiteKnowledge(
   const terms = queryTerms(query);
 
   return [...websiteKnowledge, ...documentKnowledge]
-    .map((source) => ({ source, score: knowledgeScore(source, terms) }))
+    .map((source) => ({
+      source,
+      score:
+        knowledgeScore(source, terms) +
+        technicalSpecificationScore(source, query),
+    }))
     .sort((left, right) => right.score - left.score)
     .slice(0, resolvedLimit)
     .map(({ source }) => source);
