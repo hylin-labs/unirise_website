@@ -56,12 +56,29 @@ function queryTerms(value: string) {
     '問題',
     '服務',
   ]);
-  return [
+  const terms = [
     ...new Set([
       ...latinAndNumbers.filter((term) => term.length > 1),
       ...chinesePairs.filter((term) => !commonPairs.has(term)),
     ]),
   ];
+  const technicalExpansions: Array<[RegExp, string[]]> = [
+    [/電壓|伏特|voltage|volt/i, ['voltage', 'supply', 'power', '400v', '24v']],
+    [
+      /輸入|供電|電源|input|feed|supply/i,
+      ['input', 'supply', 'feed', 'connection'],
+    ],
+    [
+      /壓縮空氣|氣動|compressed air|pneumatic/i,
+      ['compressed', 'air', 'pneumatic', 'pressure'],
+    ],
+    [/液壓|hydraulic/i, ['hydraulic', 'power', 'pressure', 'unit']],
+    [/篩網|濾網|screen|filter/i, ['screen', 'filter', 'backflush', 'changer']],
+  ];
+  for (const [pattern, expansion] of technicalExpansions) {
+    if (pattern.test(value)) terms.push(...expansion);
+  }
+  return [...new Set(terms)];
 }
 
 function knowledgeScore(source: SiteKnowledgeSource, terms: string[]) {

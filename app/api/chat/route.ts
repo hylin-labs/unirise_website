@@ -72,7 +72,62 @@ function visibleAnswer(answer: string) {
   return answer.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '').trim();
 }
 
-function sourceFallbackAnswer(locale: Locale, sources: KnowledgeSource[]) {
+function voltageFallbackAnswer(
+  locale: Locale,
+  sources: KnowledgeSource[],
+  question: string,
+) {
+  if (
+    !/(電壓|伏特|供電|電源|voltage|volt|power supply)/i.test(question) ||
+    !sources.some((source) => !source.href)
+  )
+    return null;
+  const documentText = sources
+    .filter((source) => !source.href)
+    .map((source) => source.content.replace(/\s+/g, ' '))
+    .join(' ');
+  const heatingVoltage = documentText.match(
+    /(?:3\.3\s+)?Voltage\s+V\s+(\d+(?:\.\d+)?)/i,
+  )?.[1];
+  const hydraulicVoltage = documentText.match(
+    /(?:4\.2\s+)?Voltage\s+V\/Hz\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)/i,
+  );
+  const controlVoltage = documentText.match(
+    /(?:4\.3\s+)?Control voltage\s+V\s+(\d+(?:\.\d+)?)\s*(DC|AC)?/i,
+  );
+  if (!heatingVoltage && !hydraulicVoltage && !controlVoltage) return null;
+
+  if (locale === 'en') {
+    const details = [
+      heatingVoltage ? `heating system: ${heatingVoltage} V` : null,
+      hydraulicVoltage
+        ? `hydraulic power unit: ${hydraulicVoltage[1]} V / ${hydraulicVoltage[2]} Hz`
+        : null,
+      controlVoltage
+        ? `control voltage: ${controlVoltage[1]} V${controlVoltage[2] ? ` ${controlVoltage[2]}` : ''}`
+        : null,
+    ].filter((detail): detail is string => Boolean(detail));
+    return `According to the reviewed technical data, ${details.join('; ')}.`;
+  }
+  const details = [
+    heatingVoltage ? `加熱系統為 ${heatingVoltage} V` : null,
+    hydraulicVoltage
+      ? `液壓動力單元為 ${hydraulicVoltage[1]} V／${hydraulicVoltage[2]} Hz`
+      : null,
+    controlVoltage
+      ? `控制電壓為 ${controlVoltage[1]} V${controlVoltage[2] ? ` ${controlVoltage[2]}` : ''}`
+      : null,
+  ].filter((detail): detail is string => Boolean(detail));
+  return `依已核准的技術文件：${details.join('；')}。`;
+}
+
+function sourceFallbackAnswer(
+  locale: Locale,
+  sources: KnowledgeSource[],
+  question: string,
+) {
+  const voltageAnswer = voltageFallbackAnswer(locale, sources, question);
+  if (voltageAnswer) return voltageAnswer;
   const includesTechnicalDocument = sources.some((source) => !source.href);
   const summary = sources
     .slice(0, 3)
@@ -103,10 +158,14 @@ function reportChatProviderFailure(
   console.error('chat_provider_failure', { kind, ...details });
 }
 
-function sourceFallbackResponse(locale: Locale, sources: KnowledgeSource[]) {
+function sourceFallbackResponse(
+  locale: Locale,
+  sources: KnowledgeSource[],
+  question: string,
+) {
   return Response.json(
     {
-      answer: sourceFallbackAnswer(locale, sources),
+      answer: sourceFallbackAnswer(locale, sources, question),
       sources: sources.map((source) =>
         source.href
           ? { title: source.title, href: source.href }
@@ -252,7 +311,7 @@ export function createChatHandler({
           status: upstream.status,
           contentType: upstream.headers.get('content-type') ?? 'unknown',
         });
-        return sourceFallbackResponse(locale, sources);
+        return sourceFallbackResponse(locale, sources, message);
       }
       const response = (await upstream.json()) as {
         choices?: Array<{ message?: { content?: unknown } }>;
@@ -262,12 +321,12 @@ export function createChatHandler({
         reportChatProviderFailure('response', {
           hasChoices: Array.isArray(response.choices),
         });
-        return sourceFallbackResponse(locale, sources);
+        return sourceFallbackResponse(locale, sources, message);
       }
       const cleanedAnswer = visibleAnswer(answer);
       if (!cleanedAnswer) {
         reportChatProviderFailure('response', { hasChoices: true });
-        return sourceFallbackResponse(locale, sources);
+        return sourceFallbackResponse(locale, sources, message);
       }
       if (visitorHash) {
         try {
@@ -304,7 +363,7 @@ export function createChatHandler({
       reportChatProviderFailure('request', {
         errorName: error instanceof Error ? error.name : 'unknown',
       });
-      return sourceFallbackResponse(locale, sources);
+      return sourceFallbackResponse(locale, sources, message);
     }
   };
 }
