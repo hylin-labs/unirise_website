@@ -575,6 +575,81 @@
   border-color: #7c0d12;
   background: #7c0d12;
 }
+.reviewSummary,
+.reviewFilters,
+.reviewActions,
+.reviewChunkHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reviewSummary {
+  flex-wrap: wrap;
+  margin: 18px 0 12px;
+}
+.reviewSummary span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f1f1f1;
+  color: #555;
+  font-size: 14px;
+}
+.reviewFilters {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.reviewFilters button,
+.reviewActions button {
+  padding: 8px 12px;
+  border: 1px solid #c7161e;
+  border-radius: 4px;
+  background: #fff;
+  color: #c7161e;
+  font: inherit;
+  cursor: pointer;
+}
+.reviewFilters .activeReviewFilter {
+  background: #c7161e;
+  color: #fff;
+}
+.reviewList {
+  display: grid;
+  gap: 14px;
+}
+.reviewChunk {
+  padding: 18px;
+  border: 1px solid #d8d8d8;
+  border-radius: 7px;
+  background: #fafafa;
+}
+.reviewChunkHeading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.reviewChunkHeading span {
+  color: #666;
+  font-size: 14px;
+}
+.reviewChunk textarea {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: #222;
+  font: inherit;
+  line-height: 1.65;
+  resize: vertical;
+}
+.reviewActions {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.reviewActions .deleteButton {
+  border-color: #9d1117;
+  background: #9d1117;
+  color: #fff;
+}
 .contentRow button:disabled {
   opacity: 0.5;
   cursor: wait;

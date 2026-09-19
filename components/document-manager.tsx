@@ -2,7 +2,10 @@
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import type { AdminIdentity } from '../lib/admin-auth';
-import type { KnowledgeDocument } from '../lib/document-repository';
+import type {
+  DocumentReview,
+  KnowledgeDocument,
+} from '../lib/document-repository';
 import { redirectAdminUnauthorized } from '../lib/admin-content';
 import styles from './admin-dashboard.module.css';
 
@@ -39,6 +42,11 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [review, setReview] = useState<DocumentReview | null>(null);
+  const [reviewFilter, setReviewFilter] = useState<
+    'review_required' | 'approved' | 'rejected'
+  >('review_required');
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -170,6 +178,100 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
         '文字擷取未完成。若文件是掃描檔，下一階段需要 OCR；請稍後再試或改用可搜尋文字的 PDF。',
       );
       await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openReview(record: KnowledgeDocument) {
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(
+        `/api/admin/document-reviews?id=${encodeURIComponent(record.id)}`,
+        { cache: 'no-store' },
+      );
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('review_load_failed');
+      const payload = (await response.json()) as { review: DocumentReview };
+      setReview(payload.review);
+      setReviewFilter('review_required');
+      setDrafts(
+        Object.fromEntries(
+          payload.review.chunks.map((chunk) => [chunk.id, chunk.content]),
+        ),
+      );
+    } catch {
+      setError('目前無法載入文件段落，請稍後再試。');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyReview(
+    chunkId: string,
+    action: 'approve' | 'reject' | 'save',
+  ) {
+    if (!review) return;
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/document-reviews', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: review.document.id,
+          chunkId,
+          action,
+          content: action === 'save' ? drafts[chunkId] : undefined,
+        }),
+      });
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('review_update_failed');
+      const payload = (await response.json()) as { review: DocumentReview };
+      setReview(payload.review);
+      setDrafts(
+        Object.fromEntries(
+          payload.review.chunks.map((chunk) => [chunk.id, chunk.content]),
+        ),
+      );
+      await load();
+    } catch {
+      setError('段落尚未更新，請稍後再試。');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function approveAll() {
+    if (!review) return;
+    if (
+      !window.confirm(
+        `確定核准「${review.document.displayTitle}」所有待審段落嗎？核准後才會進入網站助理的可用知識範圍。`,
+      )
+    )
+      return;
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/document-reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: review.document.id,
+          action: 'approve_all',
+        }),
+      });
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('approve_all_failed');
+      const payload = (await response.json()) as { review: DocumentReview };
+      setReview(payload.review);
+      setReviewFilter('approved');
+      setNotice('待審段落已核准，文件審核狀態已更新。');
+      await load();
+    } catch {
+      setError('無法批次核准，請稍後再試。');
     } finally {
       setSaving(false);
     }
@@ -352,6 +454,16 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                               : '開始文字擷取'}
                       </button>
                     ) : null}
+                    {record.accessLevel !== 'confidential' &&
+                    record.extractionPageCount ? (
+                      <button
+                        type="button"
+                        onClick={() => void openReview(record)}
+                        disabled={saving}
+                      >
+                        人工審核
+                      </button>
+                    ) : null}
                     <button
                       className={styles.deleteButton}
                       type="button"
@@ -368,6 +480,122 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
             <p className={styles.empty}>尚未上傳文件。</p>
           )}
         </article>
+        {review ? (
+          <article className={styles.panel}>
+            <div className={styles.panelHeading}>
+              <div>
+                <h2>人工審核：{review.document.displayTitle}</h2>
+                <p className={styles.panelIntro}>
+                  檢視內容與頁碼來源；只有核准的段落才會進入網站助理的知識範圍。
+                </p>
+              </div>
+              <div className={styles.headingActions}>
+                {review.summary.reviewRequired ? (
+                  <button
+                    type="button"
+                    onClick={() => void approveAll()}
+                    disabled={saving}
+                  >
+                    全部核准待審段落
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setReview(null)}
+                  disabled={saving}
+                >
+                  關閉審核
+                </button>
+              </div>
+            </div>
+            <div className={styles.reviewSummary}>
+              <span>待審 {review.summary.reviewRequired}</span>
+              <span>已核准 {review.summary.approved}</span>
+              <span>已排除 {review.summary.rejected}</span>
+            </div>
+            <div className={styles.reviewFilters} aria-label="段落審核篩選">
+              {(
+                [
+                  ['review_required', '待審段落'],
+                  ['approved', '已核准'],
+                  ['rejected', '已排除'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  className={
+                    reviewFilter === value ? styles.activeReviewFilter : ''
+                  }
+                  key={value}
+                  type="button"
+                  onClick={() => setReviewFilter(value)}
+                  disabled={saving}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className={styles.reviewList}>
+              {review.chunks
+                .filter((chunk) => chunk.status === reviewFilter)
+                .map((chunk) => (
+                  <section className={styles.reviewChunk} key={chunk.id}>
+                    <div className={styles.reviewChunkHeading}>
+                      <strong>段落 {chunk.chunkNumber + 1}</strong>
+                      <span>
+                        來源頁碼：{chunk.pageStart}
+                        {chunk.pageEnd === chunk.pageStart
+                          ? ''
+                          : `–${chunk.pageEnd}`}
+                      </span>
+                    </div>
+                    <textarea
+                      aria-label={`段落 ${chunk.chunkNumber + 1} 內容`}
+                      value={drafts[chunk.id] ?? chunk.content}
+                      onChange={(event) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [chunk.id]: event.currentTarget.value,
+                        }))
+                      }
+                      disabled={saving}
+                      rows={7}
+                    />
+                    <div className={styles.reviewActions}>
+                      <button
+                        type="button"
+                        onClick={() => void applyReview(chunk.id, 'save')}
+                        disabled={saving}
+                      >
+                        儲存內容
+                      </button>
+                      {chunk.status !== 'approved' ? (
+                        <button
+                          type="button"
+                          onClick={() => void applyReview(chunk.id, 'approve')}
+                          disabled={saving}
+                        >
+                          核准
+                        </button>
+                      ) : null}
+                      {chunk.status !== 'rejected' ? (
+                        <button
+                          className={styles.deleteButton}
+                          type="button"
+                          onClick={() => void applyReview(chunk.id, 'reject')}
+                          disabled={saving}
+                        >
+                          排除
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+                ))}
+              {!review.chunks.some((chunk) => chunk.status === reviewFilter) ? (
+                <p className={styles.empty}>這個篩選條件目前沒有段落。</p>
+              ) : null}
+            </div>
+          </article>
+        ) : null}
       </section>
     </main>
   );

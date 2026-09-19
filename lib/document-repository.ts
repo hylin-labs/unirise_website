@@ -38,6 +38,24 @@ export type KnowledgeDocument = {
   updatedAt: string;
 };
 
+export type DocumentReviewChunk = {
+  id: string;
+  documentId: string;
+  chunkNumber: number;
+  pageStart: number;
+  pageEnd: number;
+  language: DocumentLanguage;
+  content: string;
+  status: 'review_required' | 'approved' | 'rejected';
+  updatedAt: string;
+};
+
+export type DocumentReview = {
+  document: KnowledgeDocument;
+  chunks: DocumentReviewChunk[];
+  summary: { reviewRequired: number; approved: number; rejected: number };
+};
+
 type DocumentRow = {
   id: string;
   original_filename: string;
@@ -61,6 +79,18 @@ type ExtractionDocument = {
   source_language: DocumentLanguage;
   access_level: DocumentAccessLevel;
   assistant_status: DocumentAssistantStatus;
+};
+
+type DocumentReviewChunkRow = {
+  id: string;
+  document_id: string;
+  chunk_number: number;
+  page_start: number;
+  page_end: number;
+  language: DocumentLanguage;
+  content: string;
+  status: DocumentReviewChunk['status'];
+  updated_at: string;
 };
 
 export class DocumentValidationError extends Error {
@@ -107,6 +137,20 @@ function rowToDocument(row: DocumentRow): KnowledgeDocument {
     extractionCharacters: row.extraction_characters,
     extractionError: row.extraction_error,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function chunkToReviewRow(row: DocumentReviewChunkRow): DocumentReviewChunk {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    chunkNumber: row.chunk_number,
+    pageStart: row.page_start,
+    pageEnd: row.page_end,
+    language: row.language,
+    content: row.content,
+    status: row.status,
     updatedAt: row.updated_at,
   };
 }
@@ -239,6 +283,156 @@ export async function listDocuments(db: D1Database) {
     )
     .all<DocumentRow>();
   return rows.results.map(rowToDocument);
+}
+
+async function findDocumentForReview(db: D1Database, id: unknown) {
+  if (typeof id !== 'string' || !id.trim())
+    throw new DocumentValidationError('id is required');
+  return db
+    .prepare(
+      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, extraction_page_count, extraction_characters, extraction_error, created_at, updated_at
+       FROM ${uniriseSchema.documents} WHERE id = ? LIMIT 1`,
+    )
+    .bind(id)
+    .first<DocumentRow>();
+}
+
+function reviewSummary(chunks: DocumentReviewChunk[]) {
+  return chunks.reduce(
+    (summary, chunk) => {
+      summary[
+        chunk.status === 'review_required' ? 'reviewRequired' : chunk.status
+      ] += 1;
+      return summary;
+    },
+    { reviewRequired: 0, approved: 0, rejected: 0 },
+  );
+}
+
+export async function getDocumentReview(db: D1Database, id: unknown) {
+  const document = await findDocumentForReview(db, id);
+  if (!document) throw new DocumentValidationError('document_not_found');
+  const rows = await db
+    .prepare(
+      `SELECT id, document_id, chunk_number, page_start, page_end, language, content, status, updated_at
+       FROM ${uniriseSchema.documentChunks}
+       WHERE document_id = ? ORDER BY chunk_number ASC`,
+    )
+    .bind(document.id)
+    .all<DocumentReviewChunkRow>();
+  const chunks = rows.results.map(chunkToReviewRow);
+  return {
+    document: rowToDocument(document),
+    chunks,
+    summary: reviewSummary(chunks),
+  } satisfies DocumentReview;
+}
+
+async function syncDocumentReviewStatus(
+  db: D1Database,
+  documentId: string,
+  actor: AdminIdentity,
+) {
+  const review = await getDocumentReview(db, documentId);
+  const now = new Date().toISOString();
+  const nextStatus = review.summary.reviewRequired
+    ? 'review_required'
+    : review.summary.approved
+      ? 'approved'
+      : 'excluded';
+  await db
+    .prepare(
+      `UPDATE ${uniriseSchema.documents}
+       SET assistant_status = ?, reviewed_at = ?, reviewed_by = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(nextStatus, now, actor.id, now, documentId)
+    .run();
+  return getDocumentReview(db, documentId);
+}
+
+export async function reviewDocumentChunk(
+  db: D1Database,
+  input: {
+    documentId: unknown;
+    chunkId: unknown;
+    action: unknown;
+    content?: unknown;
+  },
+  actor: AdminIdentity,
+) {
+  const documentId = requiredText(input.documentId, 'documentId', 80);
+  const chunkId = requiredText(input.chunkId, 'chunkId', 80);
+  const action = allowedValue(input.action, 'action', [
+    'approve',
+    'reject',
+    'save',
+  ] as const);
+  const document = await findDocumentForReview(db, documentId);
+  if (!document) throw new DocumentValidationError('document_not_found');
+  if (document.access_level === 'confidential')
+    throw new DocumentValidationError(
+      'confidential_documents_cannot_be_reviewed',
+    );
+  const chunk = await db
+    .prepare(
+      `SELECT id FROM ${uniriseSchema.documentChunks}
+       WHERE id = ? AND document_id = ? LIMIT 1`,
+    )
+    .bind(chunkId, documentId)
+    .first<{ id: string }>();
+  if (!chunk) throw new DocumentValidationError('document_chunk_not_found');
+  const now = new Date().toISOString();
+  const content =
+    action === 'save'
+      ? requiredText(input.content, 'content', 12_000)
+      : undefined;
+  const statements = [
+    action === 'save'
+      ? db
+          .prepare(
+            `UPDATE ${uniriseSchema.documentChunks}
+             SET content = ?, updated_at = ? WHERE id = ?`,
+          )
+          .bind(content, now, chunk.id)
+      : db
+          .prepare(
+            `UPDATE ${uniriseSchema.documentChunks}
+             SET status = ?, updated_at = ? WHERE id = ?`,
+          )
+          .bind(action === 'approve' ? 'approved' : 'rejected', now, chunk.id),
+    auditStatement(db, actor, `document.chunk_${action}`, documentId, {
+      chunkId,
+    }),
+  ];
+  await db.batch(statements);
+  return syncDocumentReviewStatus(db, documentId, actor);
+}
+
+export async function approveAllDocumentChunks(
+  db: D1Database,
+  documentId: unknown,
+  actor: AdminIdentity,
+) {
+  const id = requiredText(documentId, 'documentId', 80);
+  const document = await findDocumentForReview(db, id);
+  if (!document) throw new DocumentValidationError('document_not_found');
+  if (document.access_level === 'confidential')
+    throw new DocumentValidationError(
+      'confidential_documents_cannot_be_reviewed',
+    );
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${uniriseSchema.documentChunks}
+         SET status = 'approved', updated_at = ?
+         WHERE document_id = ? AND status = 'review_required'`,
+      )
+      .bind(now, id),
+    auditStatement(db, actor, 'document.chunks_approved', id, {}),
+  ]);
+  return syncDocumentReviewStatus(db, id, actor);
 }
 
 export type ExtractedDocumentChunk = {
