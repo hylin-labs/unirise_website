@@ -5,7 +5,10 @@ import {
   recordEvent,
 } from '../../../lib/analytics';
 import { isChatRequestAllowed } from '../../../lib/chat-rate-limit';
-import { retrieveSiteKnowledge } from '../../../lib/site-knowledge';
+import {
+  retrieveSiteKnowledge,
+  type SiteKnowledgeSource,
+} from '../../../lib/site-knowledge';
 import { parseLocale, type Locale } from '../../../lib/locales';
 import {
   RequestTooLargeError,
@@ -33,7 +36,7 @@ const fallbackAnswers: Record<Locale, string> = {
 };
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
-type KnowledgeSource = Awaited<ReturnType<typeof retrieveSiteKnowledge>>[number];
+type KnowledgeSource = SiteKnowledgeSource;
 
 type ChatHandlerOptions = {
   db: D1Database;
@@ -96,7 +99,11 @@ function sourceFallbackResponse(locale: Locale, sources: KnowledgeSource[]) {
   return Response.json(
     {
       answer: sourceFallbackAnswer(locale, sources),
-      sources: sources.map(({ title, href }) => ({ title, href })),
+      sources: sources.map((source) =>
+        source.href
+          ? { title: source.title, href: source.href }
+          : { title: source.title },
+      ),
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );
@@ -277,7 +284,11 @@ export function createChatHandler({
       return Response.json(
         {
           answer: cleanedAnswer,
-          sources: sources.map(({ title, href }) => ({ title, href })),
+          sources: sources.map((source) =>
+            source.href
+              ? { title: source.title, href: source.href }
+              : { title: source.title },
+          ),
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );

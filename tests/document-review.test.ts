@@ -9,6 +9,7 @@ import {
   getDocumentReview,
   reviewDocumentChunk,
 } from '../lib/document-repository';
+import { retrieveSiteKnowledge } from '../lib/site-knowledge';
 import { sqliteD1 } from './helpers/sqlite-d1';
 
 const admin: AdminIdentity = {
@@ -143,5 +144,38 @@ describe('document review workflow', () => {
     expect(review.chunks.find((chunk) => chunk.id === second.id)?.status).toBe(
       'approved',
     );
+  });
+
+  it('only supplies approved public document segments to the website assistant', async () => {
+    const d1 = await reviewedFixture();
+    expect(await retrieveSiteKnowledge(d1, 'zh-TW', 'X-ray')).toEqual([]);
+
+    const review = await getDocumentReview(d1, 'document-review-fixture');
+    await reviewDocumentChunk(
+      d1,
+      {
+        documentId: review.document.id,
+        chunkId: review.chunks[0].id,
+        action: 'approve',
+      },
+      admin,
+    );
+    await reviewDocumentChunk(
+      d1,
+      {
+        documentId: review.document.id,
+        chunkId: review.chunks[1].id,
+        action: 'reject',
+      },
+      admin,
+    );
+
+    await expect(retrieveSiteKnowledge(d1, 'zh-TW', 'X-ray')).resolves.toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining('document:document-review-fixture:chunk:'),
+        title: '技術文件：技術手冊（第 1 頁）',
+        content: 'X-ray inspection detects foreign material.',
+      }),
+    ]);
   });
 });
