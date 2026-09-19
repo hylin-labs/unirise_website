@@ -116,6 +116,39 @@ function technicalSpecificationScore(
   return score;
 }
 
+function technicalIntentScore(source: SiteKnowledgeSource, query: string) {
+  if (source.href) return 0;
+  const content = source.content.replace(/\s+/g, ' ');
+  let score = 0;
+
+  if (
+    /尺寸|長寬高|dimensions?|length.*width.*height/i.test(query) &&
+    /Dimensions\s+L\s*x\s*W\s*x\s*H\s+in\s+mm\s+\d+/i.test(content)
+  )
+    score += 160;
+  if (
+    /(?:維護|保養|maintenance).*(?:斷電|切斷|電源|power|disconnect)|(?:斷電|切斷|電源|disconnect).*(?:維護|保養|maintenance)/i.test(
+      query,
+    ) &&
+    /shut down and disconnected from power/i.test(content)
+  )
+    score += 160;
+  if (
+    /反沖洗|backflush/i.test(query) &&
+    /Following requirements have to be fulfilled to enable backflushing/i.test(
+      content,
+    )
+  )
+    score += 160;
+  if (
+    /緊急停止|emergency\s*-?\s*stop/i.test(query) &&
+    /EMERGENCY-STOP|Emergency stop/i.test(content)
+  )
+    score += 160;
+
+  return score;
+}
+
 async function retrieveApprovedDocumentKnowledge(
   db: D1Database,
   query: string,
@@ -171,7 +204,8 @@ async function retrieveApprovedDocumentKnowledge(
         source,
         score:
           knowledgeScore(source, terms) +
-          technicalSpecificationScore(source, query),
+          technicalSpecificationScore(source, query) +
+          technicalIntentScore(source, query),
       };
     })
     .filter(({ score }) => score > 0)
@@ -217,7 +251,8 @@ export async function retrieveSiteKnowledge(
       source,
       score:
         knowledgeScore(source, terms) +
-        technicalSpecificationScore(source, query),
+        technicalSpecificationScore(source, query) +
+        technicalIntentScore(source, query),
     }))
     .sort((left, right) => right.score - left.score)
     .slice(0, resolvedLimit)

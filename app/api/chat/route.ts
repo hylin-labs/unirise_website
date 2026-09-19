@@ -17,7 +17,7 @@ import {
 
 const MAX_MESSAGE_LENGTH = 700;
 const MAX_BODY_BYTES = 12_000;
-const GROQ_MODEL = 'openai/gpt-oss-20b';
+const GROQ_MODEL = 'openai/gpt-oss-120b';
 const systemPrompts: Record<Locale, string> = {
   'zh-TW': `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
@@ -72,27 +72,41 @@ function visibleAnswer(answer: string) {
   return answer.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '').trim();
 }
 
+function documentText(sources: KnowledgeSource[]) {
+  return sources
+    .filter((source) => !source.href)
+    .map((source) => source.content.replace(/\s+/g, ' '))
+    .join(' ');
+}
+
+function isCommercialQuestion(question: string) {
+  return /價格|報價|費用|交期|price|pricing|cost|lead time/i.test(question);
+}
+
+function hasVoltageIntent(question: string) {
+  return (
+    /電壓|伏特|voltage|volt/i.test(question) ||
+    /(?:多少|幾|how much|what|which).*(?:供電|輸入|input|supply|power supply)/i.test(
+      question,
+    )
+  );
+}
+
 function voltageFallbackAnswer(
   locale: Locale,
   sources: KnowledgeSource[],
   question: string,
 ) {
-  if (
-    !/(電壓|伏特|供電|電源|voltage|volt|power supply)/i.test(question) ||
-    !sources.some((source) => !source.href)
-  )
+  if (!hasVoltageIntent(question) || !sources.some((source) => !source.href))
     return null;
-  const documentText = sources
-    .filter((source) => !source.href)
-    .map((source) => source.content.replace(/\s+/g, ' '))
-    .join(' ');
-  const heatingVoltage = documentText.match(
+  const text = documentText(sources);
+  const heatingVoltage = text.match(
     /(?:3\.3\s+)?Voltage\s+V\s+(\d+(?:\.\d+)?)/i,
   )?.[1];
-  const hydraulicVoltage = documentText.match(
+  const hydraulicVoltage = text.match(
     /(?:4\.2\s+)?Voltage\s+V\/Hz\s+(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)/i,
   );
-  const controlVoltage = documentText.match(
+  const controlVoltage = text.match(
     /(?:4\.3\s+)?Control voltage\s+V\s+(\d+(?:\.\d+)?)\s*(DC|AC)?/i,
   );
   if (!heatingVoltage && !hydraulicVoltage && !controlVoltage) return null;
@@ -121,33 +135,78 @@ function voltageFallbackAnswer(
   return `依已核准的技術文件：${details.join('；')}。`;
 }
 
+function technicalFallbackAnswer(
+  locale: Locale,
+  sources: KnowledgeSource[],
+  question: string,
+) {
+  const text = documentText(sources);
+  if (!text) return null;
+
+  if (
+    /尺寸|長寬高|dimensions?|length.*width.*height|l\s*[x×]/i.test(question)
+  ) {
+    const dimensions = text.match(
+      /Dimensions\s+L\s*x\s*W\s*x\s*H\s+in\s+mm\s+(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i,
+    );
+    if (dimensions) {
+      return locale === 'en'
+        ? `According to the reviewed technical data, the TSK 148 XRS dimensions (L × W × H) are ${dimensions[1]} × ${dimensions[2]} × ${dimensions[3]} mm.`
+        : `依已核准的技術文件，TSK 148 XRS 的尺寸（長 × 寬 × 高）為 ${dimensions[1]} × ${dimensions[2]} × ${dimensions[3]} mm。`;
+    }
+  }
+
+  if (
+    /(?:維護|保養|maintenance).*(?:斷電|切斷|電源|power|disconnect)|(?:斷電|切斷|電源|disconnect).*(?:維護|保養|maintenance)/i.test(
+      question,
+    ) &&
+    /shut down and disconnected from power/i.test(text)
+  ) {
+    return locale === 'en'
+      ? 'According to the reviewed technical document, before maintenance the entire line must be shut down and disconnected from power.'
+      : '依已核准的技術文件，開始維護前必須關閉整條生產線並斷開電源。';
+  }
+
+  if (
+    /反沖洗|backflush/i.test(question) &&
+    /hydraulic is ready.*whole line has reached operating temperature.*protection covers are closed.*both bolts are in production position.*previous screen changing process is completed/i.test(
+      text,
+    )
+  ) {
+    return locale === 'en'
+      ? 'Before backflushing, the hydraulic system must be ready, the full line must be at operating temperature, the protection covers must be closed, both bolts must be in production position, and the previous screen-change process must be complete.'
+      : '依已核准的技術文件，進行反沖洗前必須確認：液壓系統已就緒、整線已達操作溫度、保護蓋已關閉、兩支螺栓在生產位置，且前一次換網程序已完成。';
+  }
+
+  if (
+    /緊急停止|emergency\s*-?\s*stop/i.test(question) &&
+    /stops.*movement.*switches off.*hydraulic/i.test(text)
+  ) {
+    return locale === 'en'
+      ? 'According to the reviewed technical document, the emergency stop immediately stops screen-changer movement and switches off the associated hydraulic power unit.'
+      : '依已核准的技術文件，緊急停止會立即停止換網器移動，並關閉相關液壓動力單元。';
+  }
+
+  return null;
+}
+
 function sourceFallbackAnswer(
   locale: Locale,
   sources: KnowledgeSource[],
   question: string,
 ) {
+  if (isCommercialQuestion(question)) {
+    return locale === 'en'
+      ? 'The public website does not provide price or lead-time details. Please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
+      : '公開網站沒有提供價格或交期細節。請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。';
+  }
   const voltageAnswer = voltageFallbackAnswer(locale, sources, question);
   if (voltageAnswer) return voltageAnswer;
-  const includesTechnicalDocument = sources.some((source) => !source.href);
-  const summary = sources
-    .slice(0, 3)
-    .map((source) => {
-      const content = source.content.replace(/\s+/g, ' ').trim().slice(0, 360);
-      return `• ${source.title}：${content}`;
-    })
-    .join('\n');
-  const closing =
-    locale === 'en'
-      ? 'For specifications, project suitability, or a quotation, please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
-      : '如需規格、適用性或報價，請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。';
-  const introduction = includesTechnicalDocument
-    ? locale === 'en'
-      ? 'The assistant is temporarily unable to summarize the result. These reviewed technical-document excerpts were found:'
-      : '網站助理暫時無法整理完整答案；已找到下列經人工核准的技術文件段落：'
-    : locale === 'en'
-      ? 'Based on published website information:'
-      : '依網站已公開的相關資訊：';
-  return `${introduction}\n${summary}\n\n${closing}`;
+  const technicalAnswer = technicalFallbackAnswer(locale, sources, question);
+  if (technicalAnswer) return technicalAnswer;
+  return locale === 'en'
+    ? 'The assistant is temporarily unable to confirm this detail from the available public information. Please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
+    : '網站助理暫時無法從現有公開資料確認這項細節。請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。';
 }
 
 function reportChatProviderFailure(

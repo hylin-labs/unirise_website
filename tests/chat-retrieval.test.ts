@@ -69,7 +69,7 @@ describe('chat retrieval', () => {
     });
   });
 
-  it('uses matched public content when the chat provider is temporarily unavailable', async () => {
+  it('uses a concise controlled response when the chat provider is temporarily unavailable', async () => {
     const database = new ContentDatabase();
     await saveKnowledge(
       database.d1,
@@ -110,7 +110,7 @@ describe('chat retrieval', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       answer:
-        '依網站已公開的相關資訊：\n• 食品分選方案：網站提供依顏色與外觀進行食品品質等級分類的自動化分選方案。\n\n如需規格、適用性或報價，請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。',
+        '網站助理暫時無法從現有公開資料確認這項細節。請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。',
       sources: [{ title: '食品分選方案', href: '/catalog?type=industry&id=1' }],
     });
     expect(logger).toHaveBeenCalledWith('chat_provider_failure', {
@@ -155,6 +155,80 @@ describe('chat retrieval', () => {
       answer:
         '依已核准的技術文件：加熱系統為 400 V；液壓動力單元為 400 V／50 Hz；控制電壓為 24 V DC。',
       sources: [{ title: '技術文件：TSK 148 XRS（第 41 頁）' }],
+    });
+  });
+
+  it('returns reviewed dimensions when a technical-document answer cannot reach the chat provider', async () => {
+    const database = new ContentDatabase();
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed: async () => true,
+      retrieveKnowledge: async () => [
+        {
+          id: 'document:tsk-148:chunk:technical-data',
+          title: '技術文件：TSK 148 XRS（第 46 頁）',
+          content: 'Dimensions L x W x H in mm 2993 x 606 x 1372',
+          tags: ['技術文件'],
+        },
+      ],
+      fetcher: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    const response = await handler(
+      new Request('https://unirise.example/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locale: 'zh-TW',
+          message: 'TSK 148 XRS 尺寸是多少？',
+        }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      answer:
+        '依已核准的技術文件，TSK 148 XRS 的尺寸（長 × 寬 × 高）為 2993 × 606 × 1372 mm。',
+      sources: [{ title: '技術文件：TSK 148 XRS（第 46 頁）' }],
+    });
+  });
+
+  it('does not mistake a maintenance power-disconnect question for a voltage question', async () => {
+    const database = new ContentDatabase();
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed: async () => true,
+      retrieveKnowledge: async () => [
+        {
+          id: 'document:tsk-148:chunk:maintenance',
+          title: '技術文件：TSK 148 XRS（第 26 頁）',
+          content:
+            'Before starting maintenance work the entire line has to be shut down and disconnected from power.',
+          tags: ['技術文件'],
+        },
+      ],
+      fetcher: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    const response = await handler(
+      new Request('https://unirise.example/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locale: 'zh-TW',
+          message: '維護設備時是否必須切斷電源？',
+        }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      answer: '依已核准的技術文件，開始維護前必須關閉整條生產線並斷開電源。',
+      sources: [{ title: '技術文件：TSK 148 XRS（第 26 頁）' }],
     });
   });
 
