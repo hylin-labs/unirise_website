@@ -532,6 +532,18 @@
 .contentRow:first-child {
   border-top: 0;
 }
+.documentRow {
+  grid-template-columns: minmax(280px, 1fr) auto;
+}
+.documentRow > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.documentRow .rowActions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
 .contentRow strong,
 .contentRow small {
   display: block;

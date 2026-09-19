@@ -416,7 +416,10 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
           ) : records.length ? (
             <div className={styles.contentList}>
               {records.map((record) => (
-                <div className={styles.contentRow} key={record.id}>
+                <div
+                  className={`${styles.contentRow} ${styles.documentRow}`}
+                  key={record.id}
+                >
                   <div>
                     <strong>{record.displayTitle}</strong>
                     <small>

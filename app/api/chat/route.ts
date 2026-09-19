@@ -73,6 +73,7 @@ function visibleAnswer(answer: string) {
 }
 
 function sourceFallbackAnswer(locale: Locale, sources: KnowledgeSource[]) {
+  const includesTechnicalDocument = sources.some((source) => !source.href);
   const summary = sources
     .slice(0, 3)
     .map((source) => {
@@ -84,7 +85,14 @@ function sourceFallbackAnswer(locale: Locale, sources: KnowledgeSource[]) {
     locale === 'en'
       ? 'For specifications, project suitability, or a quotation, please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
       : '如需規格、適用性或報價，請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。';
-  return `${locale === 'en' ? 'Based on published website information:' : '依網站已公開的相關資訊：'}\n${summary}\n\n${closing}`;
+  const introduction = includesTechnicalDocument
+    ? locale === 'en'
+      ? 'The assistant is temporarily unable to summarize the result. These reviewed technical-document excerpts were found:'
+      : '網站助理暫時無法整理完整答案；已找到下列經人工核准的技術文件段落：'
+    : locale === 'en'
+      ? 'Based on published website information:'
+      : '依網站已公開的相關資訊：';
+  return `${introduction}\n${summary}\n\n${closing}`;
 }
 
 function reportChatProviderFailure(
