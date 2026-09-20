@@ -19,6 +19,10 @@ const MAX_MESSAGE_LENGTH = 700;
 const MAX_BODY_BYTES = 12_000;
 const PRIMARY_GROQ_MODEL = 'qwen/qwen3.8-27b';
 const FALLBACK_GROQ_MODEL = 'openai/gpt-oss-120b';
+const GROQ_REQUEST_TIMEOUT_MS = 15_000;
+const QWEN_FALLBACK_STATUSES = new Set([
+  400, 403, 404, 410, 422, 429, 500, 502, 503, 504,
+]);
 const systemPrompts: Record<Locale, string> = {
   'zh-TW': `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
@@ -356,25 +360,50 @@ export function createChatHandler({
         ...validHistory(body.history),
         { role: 'user' as const, content: message },
       ];
-      const requestCompletion = (model: string) =>
-        fetcher('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${groqApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0,
-            max_tokens: 260,
-            messages,
-          }),
-        });
+      const requestCompletion = async (model: string) => {
+        const send = async () => {
+          const controller = new AbortController();
+          const timer = setTimeout(
+            () => controller.abort(),
+            GROQ_REQUEST_TIMEOUT_MS,
+          );
+          try {
+            return await fetcher(
+              'https://api.groq.com/openai/v1/chat/completions',
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${groqApiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                signal: controller.signal,
+                body: JSON.stringify({
+                  model,
+                  temperature: 0,
+                  max_tokens: 260,
+                  messages,
+                }),
+              },
+            );
+          } finally {
+            clearTimeout(timer);
+          }
+        };
+        try {
+          return await send();
+        } catch (error) {
+          // A single retry covers short-lived connection resets without turning
+          // a persistent provider outage into unbounded visitor traffic.
+          if (!(error instanceof TypeError)) throw error;
+          return send();
+        }
+      };
       let upstream = await requestCompletion(PRIMARY_GROQ_MODEL);
 
-      // Qwen is a preview model. If Groq reports that it is no longer available,
-      // retry once with the stable GPT-OSS model before using the safe document fallback.
-      if (!upstream.ok && [400, 404, 410, 422].includes(upstream.status))
+      // Qwen is a preview model. If it is unavailable, rate limited, rejected
+      // by model permissions, or has a provider-side failure, use the stable
+      // GPT-OSS model before returning the safe document fallback.
+      if (!upstream.ok && QWEN_FALLBACK_STATUSES.has(upstream.status))
         upstream = await requestCompletion(FALLBACK_GROQ_MODEL);
 
       if (!upstream.ok) {

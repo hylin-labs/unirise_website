@@ -119,6 +119,50 @@ describe('chat retrieval', () => {
     ]);
   });
 
+  it('uses GPT-OSS when Qwen is blocked by model permissions', async () => {
+    const database = new ContentDatabase();
+    const requestedModels: string[] = [];
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed: async () => true,
+      retrieveKnowledge: async () => [
+        {
+          id: 'source',
+          title: '公開來源',
+          href: '/source',
+          content: '已公開的測試內容。',
+          tags: ['測試'],
+        },
+      ],
+      fetcher: async (_input, init) => {
+        if (typeof init?.body === 'string')
+          requestedModels.push(JSON.parse(init.body).model);
+        return requestedModels.length === 1
+          ? new Response('model_forbidden', { status: 403 })
+          : Response.json({
+              choices: [{ message: { content: '備援回答' } }],
+            });
+      },
+    });
+
+    const response = await handler(
+      new Request('https://unirise.example/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locale: 'zh-TW', message: '測試問題' }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      answer: '備援回答',
+    });
+    expect(requestedModels).toEqual([
+      'qwen/qwen3.8-27b',
+      'openai/gpt-oss-120b',
+    ]);
+  });
+
   it('uses a concise controlled response when the chat provider is temporarily unavailable', async () => {
     const database = new ContentDatabase();
     await saveKnowledge(
