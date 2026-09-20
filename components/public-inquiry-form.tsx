@@ -9,11 +9,13 @@ export function PublicInquiryForm({
   product,
   brief = '',
   locale = 'zh-TW',
+  service = false,
 }: {
   inquiry: InquiryPayload;
   product: string;
   brief?: string;
   locale?: Locale;
+  service?: boolean;
 }) {
   const [status, setStatus] = useState('');
   const [sending, setSending] = useState(false);
@@ -34,12 +36,14 @@ export function PublicInquiryForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requestType: 'quote',
+          requestType: service ? 'specialist' : 'quote',
           name: value('name'),
           company: value('company'),
           phone: value('phone'),
           email: value('email'),
-          topic: value('product'),
+          topic: service
+            ? `${locale === 'en' ? 'Service support' : '設備服務支援'}｜${value('product')}`
+            : value('product'),
           message: brief
             ? `${brief}\n\n${value('message')}`.trim()
             : value('message'),
@@ -81,8 +85,20 @@ export function PublicInquiryForm({
       onSubmit={submit}
       aria-busy={sending}
     >
-      <h2>{product || text.heading}</h2>
-      <p>{text.help}</p>
+      <h2>
+        {service
+          ? locale === 'en'
+            ? 'Equipment service support'
+            : '既有設備服務支援'
+          : product || text.heading}
+      </h2>
+      <p>
+        {service
+          ? locale === 'en'
+            ? 'Tell us the equipment model, observed condition, and the best way to contact you. A specialist will review the request.'
+            : '請提供設備型號、目前狀況與聯絡方式；專員會先檢視需求後與您聯繫。'
+          : text.help}
+      </p>
       {brief && (
         <div className="inquiry-brief" aria-live="polite">
           <strong>{locale === 'en' ? 'Project brief' : '專案需求摘要'}</strong>

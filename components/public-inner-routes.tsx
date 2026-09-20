@@ -21,6 +21,7 @@ import { ContextualInquiryEntry } from './contextual-inquiry-entry';
 import { PublicInquiryForm } from './public-inquiry-form';
 import { PublicVideoEmbed } from './public-video-embed';
 import { SolutionFinder } from './solution-finder';
+import { ProjectPassport } from './project-passport';
 
 /* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- Preserve the original catalog, news, downloads, and contact markup and native links. */
 
@@ -666,6 +667,7 @@ export async function PublicInquiryRoute({
   );
   const product = first(params.product) || '';
   const brief = first(params.brief)?.slice(0, 900) || '';
+  const service = first(params.service) === '1';
   return (
     <PublicInnerPage
       locale={locale}
@@ -682,7 +684,44 @@ export async function PublicInquiryRoute({
         product={product}
         brief={brief}
         locale={locale}
+        service={service}
       />
+    </PublicInnerPage>
+  );
+}
+
+const projectPassportCopy = {
+  'zh-TW': { title: '專案方案護照', eyebrow: '專案工作台' },
+  en: { title: 'Project Solution Passport', eyebrow: 'Project Workspace' },
+} as const;
+
+export async function PublicProjectPassportRoute({
+  locale,
+  searchParams,
+}: LocalizedRouteProps) {
+  const [params, { payload: chrome }] = await Promise.all([
+    searchParams,
+    managedPage(database(), 'chrome', locale),
+  ]);
+  const search = new URLSearchParams(
+    Object.entries(params).flatMap(([key, value]) => {
+      const entries = Array.isArray(value) ? value : [value];
+      return entries
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => [key, entry]);
+    }),
+  ).toString();
+  const copy = projectPassportCopy[locale];
+  return (
+    <PublicInnerPage
+      locale={locale}
+      path="/project"
+      chrome={chrome}
+      title={copy.title}
+      eyebrow={copy.eyebrow}
+      breadcrumbs={[{ label: copy.title }]}
+    >
+      <ProjectPassport locale={locale} search={search} />
     </PublicInnerPage>
   );
 }

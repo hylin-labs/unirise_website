@@ -149,4 +149,50 @@ describe('localized inquiry workflow', () => {
           'Packaged food · X-ray foreign-object inspection · High-capacity line\n\nPlease contact me about this line.',
       });
   });
+
+  it('routes existing-equipment support through the tracked specialist workflow', async () => {
+    const inquiry = structuredClone(initialPublicContent.inquiry);
+    await act(async () =>
+      root.render(
+        <PublicInquiryForm
+          inquiry={inquiry}
+          product="XAVIS inspection line"
+          service
+        />,
+      ),
+    );
+    const fields = {
+      name: 'Lin',
+      company: 'Test company',
+      phone: '06-3319283',
+      email: 'lin@example.com',
+      message: '設備異常，請協助安排檢查。',
+    };
+    for (const [name, value] of Object.entries(fields)) {
+      const field = container.querySelector<
+        HTMLInputElement | HTMLTextAreaElement
+      >(`[name="${name}"]`)!;
+      field.value = value;
+    }
+    const fetchStub = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ accepted: true, followUpDelayed: false }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchStub);
+    await act(async () =>
+      container
+        .querySelector('form')!
+        .dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true }),
+        ),
+    );
+    const request = fetchStub.mock.calls[0]?.[1];
+    expect(JSON.parse(request?.body as string)).toMatchObject({
+      requestType: 'specialist',
+      topic: '設備服務支援｜XAVIS inspection line',
+    });
+  });
 });

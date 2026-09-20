@@ -43,6 +43,10 @@ const pageCopy: Record<
       title: '詢價系統 | 合軒科技有限公司',
       description: '向合軒科技提出產品詢問與資料索取。',
     },
+    '/project': {
+      title: '專案方案護照 | 合軒科技有限公司',
+      description: '查看合軒科技專案的初步方案設定與下一步服務入口。',
+    },
   },
   en: {
     '/': {
@@ -79,6 +83,11 @@ const pageCopy: Record<
       title: 'Inquiry | Unirise Technology Inc.',
       description:
         'Request product information and discuss your application with Unirise Technology Inc.',
+    },
+    '/project': {
+      title: 'Project Solution Passport | Unirise Technology Inc.',
+      description:
+        'View an initial Unirise project configuration and next-step service options.',
     },
   },
 };

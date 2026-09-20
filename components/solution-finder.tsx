@@ -1,17 +1,18 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import {
+  createProjectDraft,
+  projectPassportHref,
+  projectWorkspaceStorageKey,
+  type ProjectCapacity,
+  type ProjectGoal,
+  type ProjectMaterial,
+  type ProjectPriority,
+  type ProjectSelection,
+} from '../lib/project-workspace';
 
 type Locale = 'zh-TW' | 'en';
-type FinderValue = 'fresh' | 'protein' | 'packaged' | 'recycled' | 'plastics';
-type Goal =
-  | 'sorting'
-  | 'inspection'
-  | 'weighing'
-  | 'packing'
-  | 'recycling'
-  | 'materials';
-type Capacity = 'pilot' | 'growing' | 'high';
 
 type Recommendation = {
   title: string;
@@ -26,6 +27,7 @@ const copy = {
     product: '您的產品類型',
     goal: '主要需求',
     capacity: '預估產能規模',
+    priority: '本案最優先目標',
     select: '請選擇',
     results: '建議優先討論',
     details: '查看方案詳情',
@@ -33,12 +35,16 @@ const copy = {
     summary: '需求摘要',
     projectBrief: '專案需求工作台',
     projectHelp:
-      '先將這份初步需求摘要儲存於此裝置，再決定是否送出詢價。摘要不會包含您的個人資料。',
-    save: '儲存摘要',
+      '先將這份初步需求儲存於此裝置，產生規格摘要或可分享的方案護照，再決定是否送出詢價。內容不會包含您的個人資料。',
+    projectName: '專案名稱（選填）',
+    save: '儲存專案草稿',
     saved: '已儲存於此裝置',
     copy: '複製摘要',
     copied: '已複製',
     bringToInquiry: '帶入詢價',
+    specification: '下載規格摘要',
+    passport: '建立方案護照連結',
+    service: '既有設備服務支援',
     materials: {
       fresh: '新鮮蔬果／農產',
       protein: '肉品、海鮮或蛋白質食品',
@@ -59,6 +65,12 @@ const copy = {
       growing: '成長中的量產線',
       high: '高產能或多線生產',
     },
+    priorities: {
+      quality: '品質與一致性',
+      throughput: '產能與效率',
+      automation: '自動化整合',
+      safety: '安全與可追溯性',
+    },
   },
   en: {
     title: 'Solution Finder',
@@ -66,6 +78,7 @@ const copy = {
     product: 'Your product type',
     goal: 'Primary requirement',
     capacity: 'Expected capacity',
+    priority: 'Primary project priority',
     select: 'Select an option',
     results: 'Recommended starting point',
     details: 'View solution details',
@@ -73,12 +86,16 @@ const copy = {
     summary: 'Requirement summary',
     projectBrief: 'Project Brief',
     projectHelp:
-      'Save this preliminary brief on this device, then decide whether to send an enquiry. The brief contains no personal information.',
-    save: 'Save brief',
+      'Save this preliminary project on this device, create a specification brief or shareable solution passport, then decide whether to send an enquiry. It contains no personal information.',
+    projectName: 'Project name (optional)',
+    save: 'Save project draft',
     saved: 'Saved on this device',
     copy: 'Copy brief',
     copied: 'Copied',
     bringToInquiry: 'Bring to enquiry',
+    specification: 'Download specification brief',
+    passport: 'Create solution passport link',
+    service: 'Existing equipment support',
     materials: {
       fresh: 'Fresh produce and agricultural products',
       protein: 'Meat, seafood, or protein products',
@@ -99,12 +116,18 @@ const copy = {
       growing: 'Growing production line',
       high: 'High-capacity or multi-line production',
     },
+    priorities: {
+      quality: 'Quality and consistency',
+      throughput: 'Capacity and efficiency',
+      automation: 'Automation and integration',
+      safety: 'Safety and traceability',
+    },
   },
 } as const;
 
-function recommendationFor(locale: Locale, goal: Goal): Recommendation {
+function recommendationFor(locale: Locale, goal: ProjectGoal): Recommendation {
   const zh = locale === 'zh-TW';
-  const recommendations: Record<Goal, Recommendation> = {
+  const recommendations: Record<ProjectGoal, Recommendation> = {
     sorting: {
       title: zh ? 'OPTIMUM 食材分選方案' : 'OPTIMUM Food Sorting Solutions',
       reason: zh
@@ -153,38 +176,75 @@ function recommendationFor(locale: Locale, goal: Goal): Recommendation {
 
 export function SolutionFinder({ locale }: { locale: Locale }) {
   const text = copy[locale];
-  const [material, setMaterial] = useState<FinderValue | ''>('');
-  const [goal, setGoal] = useState<Goal | ''>('');
-  const [capacity, setCapacity] = useState<Capacity | ''>('');
+  const [material, setMaterial] = useState<ProjectMaterial | ''>('');
+  const [goal, setGoal] = useState<ProjectGoal | ''>('');
+  const [capacity, setCapacity] = useState<ProjectCapacity | ''>('');
+  const [priority, setPriority] = useState<ProjectPriority | ''>('');
+  const [projectName, setProjectName] = useState('');
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const recommendation = useMemo(
-    () => (material && goal && capacity ? recommendationFor(locale, goal) : null),
-    [capacity, goal, locale, material],
+    () =>
+      material && goal && capacity && priority
+        ? recommendationFor(locale, goal)
+        : null,
+    [capacity, goal, locale, material, priority],
   );
   const summary = useMemo(() => {
-    if (!recommendation || !material || !goal || !capacity) return '';
-    return `${text.materials[material]} · ${text.goals[goal]} · ${text.capacities[capacity]}`;
-  }, [capacity, goal, material, recommendation, text]);
+    if (!recommendation || !material || !goal || !capacity || !priority) return '';
+    return `${text.materials[material]} · ${text.goals[goal]} · ${text.capacities[capacity]} · ${text.priorities[priority]}`;
+  }, [capacity, goal, material, priority, recommendation, text]);
   const inquiryHref = recommendation
     ? `?product=${encodeURIComponent(recommendation.title)}&brief=${encodeURIComponent(summary)}`
     : '#inquiry-form';
   const saveBrief = () => {
-    if (!recommendation || !summary) return;
+    if (!recommendation || !summary || !material || !goal || !capacity || !priority) return;
     try {
+      const previous = JSON.parse(
+        window.localStorage.getItem(projectWorkspaceStorageKey) ?? '[]',
+      ) as unknown[];
+      const selection: ProjectSelection = { material, goal, capacity, priority };
+      const draft = createProjectDraft(selection, recommendation.title, projectName);
       window.localStorage.setItem(
-        'unirise-project-brief',
-        JSON.stringify({
-          title: recommendation.title,
-          summary,
-          savedAt: new Date().toISOString(),
-        }),
+        projectWorkspaceStorageKey,
+        JSON.stringify([draft, ...previous].slice(0, 20)),
       );
       setSaved(true);
     } catch {
       // Storage can be unavailable in a private browsing session. The enquiry
       // path remains available without saving anything.
     }
+  };
+  const passportHref =
+    recommendation && material && goal && capacity && priority
+      ? projectPassportHref(
+          locale,
+          createProjectDraft(
+            { material, goal, capacity, priority },
+            recommendation.title,
+            projectName,
+          ),
+        )
+      : '#solution-finder';
+  const downloadSpecification = () => {
+    if (!recommendation || !summary) return;
+    const lines = [
+      locale === 'en' ? 'Unirise preliminary specification brief' : '合軒科技初步規格摘要',
+      '',
+      `${locale === 'en' ? 'Project' : '專案'}: ${projectName.trim() || recommendation.title}`,
+      `${locale === 'en' ? 'Recommended discussion' : '建議優先討論'}: ${recommendation.title}`,
+      `${locale === 'en' ? 'Initial configuration' : '初步設定'}: ${summary}`,
+      '',
+      locale === 'en'
+        ? 'This is a preliminary discussion brief, not a formal quotation or final technical specification.'
+        : '本文件為初步討論摘要，並非正式報價或最終技術規格。',
+    ];
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'unirise-project-brief.txt';
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
   const copyBrief = async () => {
     if (!recommendation || !summary || !navigator.clipboard?.writeText) return;
@@ -214,7 +274,9 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
           {text.product}
           <select
             value={material}
-            onChange={(event) => setMaterial(event.currentTarget.value as FinderValue | '')}
+            onChange={(event) =>
+              setMaterial(event.currentTarget.value as ProjectMaterial | '')
+            }
           >
             <option value="">{text.select}</option>
             {Object.entries(text.materials).map(([value, label]) => (
@@ -228,7 +290,9 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
           {text.goal}
           <select
             value={goal}
-            onChange={(event) => setGoal(event.currentTarget.value as Goal | '')}
+            onChange={(event) =>
+              setGoal(event.currentTarget.value as ProjectGoal | '')
+            }
           >
             <option value="">{text.select}</option>
             {Object.entries(text.goals).map(([value, label]) => (
@@ -242,10 +306,24 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
           {text.capacity}
           <select
             value={capacity}
-            onChange={(event) => setCapacity(event.currentTarget.value as Capacity | '')}
+            onChange={(event) => setCapacity(event.currentTarget.value as ProjectCapacity | '')}
           >
             <option value="">{text.select}</option>
             {Object.entries(text.capacities).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {text.priority}
+          <select
+            value={priority}
+            onChange={(event) => setPriority(event.currentTarget.value as ProjectPriority | '')}
+          >
+            <option value="">{text.select}</option>
+            {Object.entries(text.priorities).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -272,6 +350,14 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               <strong>{text.projectBrief}</strong>
               <p>{text.projectHelp}</p>
             </div>
+            <label className="project-name-field">
+              {text.projectName}
+              <input
+                value={projectName}
+                maxLength={80}
+                onChange={(event) => setProjectName(event.currentTarget.value)}
+              />
+            </label>
             <div className="project-brief-actions">
               <button type="button" onClick={saveBrief}>
                 {saved ? text.saved : text.save}
@@ -279,8 +365,15 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               <button type="button" onClick={copyBrief}>
                 {copied ? text.copied : text.copy}
               </button>
+              <button type="button" onClick={downloadSpecification}>
+                {text.specification}
+              </button>
+              <a href={passportHref}>{text.passport}</a>
               <a className="original-inquiry-button" href={inquiryHref}>
                 {text.bringToInquiry}
+              </a>
+              <a href={`${locale === 'en' ? '/en/inquiry' : '/inquiry'}?service=1&product=${encodeURIComponent(recommendation.title)}&brief=${encodeURIComponent(summary)}`}>
+                {text.service}
               </a>
             </div>
           </aside>

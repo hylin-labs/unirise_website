@@ -26,7 +26,7 @@ describe('solution finder', () => {
     const selects = Array.from(
       container.querySelectorAll('select'),
     ) as unknown as HTMLSelectElement[];
-    const values = ['packaged', 'inspection', 'high'];
+    const values = ['packaged', 'inspection', 'high', 'quality'];
     for (const [index, value] of values.entries()) {
       const select = selects[index]!;
       select.value = value;
@@ -49,6 +49,8 @@ describe('solution finder', () => {
         ?.getAttribute('href'),
     ).toContain('&brief=');
     expect(container.textContent).toContain('Project Brief');
-    expect(container.textContent).toContain('Save brief');
+    expect(container.textContent).toContain('Save project draft');
+    expect(container.textContent).toContain('Download specification brief');
+    expect(container.textContent).toContain('Create solution passport link');
   });
 });
