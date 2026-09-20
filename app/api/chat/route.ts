@@ -6,6 +6,7 @@ import {
 } from '../../../lib/analytics';
 import { isChatRequestAllowed } from '../../../lib/chat-rate-limit';
 import {
+  answerFromStructuredFacts,
   retrieveSiteKnowledge,
   type SiteKnowledgeSource,
 } from '../../../lib/site-knowledge';
@@ -371,6 +372,44 @@ export function createChatHandler({
         {
           answer: fallbackAnswers[locale],
           sources: [],
+        },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    const structuredFactAnswer = answerFromStructuredFacts(
+      locale,
+      sources,
+      message,
+    );
+    if (structuredFactAnswer) {
+      if (visitorHash) {
+        try {
+          await Promise.all([
+            recordEvent(db, {
+              visitorHash,
+              name: 'chat_answered',
+              path: chatPath,
+              locale,
+            }),
+            recordChatOutcome(db, {
+              locale,
+              question: message,
+              outcome: 'answered',
+              sourceIds: sources.map((source) => source.id),
+            }),
+          ]);
+        } catch {
+          // Analytics must never prevent a verified answer.
+        }
+      }
+      return Response.json(
+        {
+          answer: structuredFactAnswer,
+          sources: sources.map((source) =>
+            source.href
+              ? { title: source.title, href: source.href }
+              : { title: source.title },
+          ),
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );

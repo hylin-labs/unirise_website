@@ -1,5 +1,6 @@
 import { uniriseSchema } from '../db/schema';
 import type { AdminIdentity } from './admin-auth';
+import { extractDeterministicDocumentFacts } from './document-facts';
 
 export const documentLanguages = ['zh-TW', 'en', 'mixed'] as const;
 export const documentAccessLevels = [
@@ -158,6 +159,7 @@ type DocumentKnowledgeFactRow = {
 type ExtractionDocument = {
   id: string;
   storage_key: string;
+  display_title: string;
   source_language: DocumentLanguage;
   access_level: DocumentAccessLevel;
   assistant_status: DocumentAssistantStatus;
@@ -762,7 +764,7 @@ export async function findDocumentForExtraction(db: D1Database, id: string) {
     throw new DocumentValidationError('id is required');
   return db
     .prepare(
-      `SELECT id, storage_key, source_language, access_level, assistant_status
+        `SELECT id, storage_key, display_title, source_language, access_level, assistant_status
        FROM ${uniriseSchema.documents} WHERE id = ? LIMIT 1`,
     )
     .bind(id)
@@ -804,22 +806,41 @@ export async function completeDocumentExtraction(
 ) {
   const now = new Date().toISOString();
   const status = options.autoApprove ? 'approved' : 'review_required';
+  const storedChunks = chunks.map((chunk, index) => ({
+    ...chunk,
+    id: crypto.randomUUID(),
+    chunkNumber: index,
+  }));
+  const facts = extractDeterministicDocumentFacts(
+    storedChunks.map((chunk) => ({
+      content: chunk.content,
+      pageStart: chunk.pageStart,
+      pageEnd: chunk.pageEnd,
+      subject: document.display_title,
+    })),
+  );
+  const factStatus = options.autoApprove ? 'approved' : 'pending';
   const statements = [
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.documentFacts} WHERE document_id = ?`,
+      )
+      .bind(document.id),
     db
       .prepare(
         `DELETE FROM ${uniriseSchema.documentChunks} WHERE document_id = ?`,
       )
       .bind(document.id),
-    ...chunks.map((chunk, index) =>
+    ...storedChunks.map((chunk) =>
       db
         .prepare(
           `INSERT INTO ${uniriseSchema.documentChunks} (id, document_id, chunk_number, page_start, page_end, language, content, extraction_method, status, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, 'text', ?, ?, ?)`,
         )
         .bind(
-          crypto.randomUUID(),
+          chunk.id,
           document.id,
-          index,
+          chunk.chunkNumber,
           chunk.pageStart,
           chunk.pageEnd,
           document.source_language,
@@ -829,6 +850,38 @@ export async function completeDocumentExtraction(
           now,
         ),
     ),
+    ...facts.map((fact) => {
+      const matchingChunk = storedChunks.find(
+        (chunk) =>
+          chunk.pageStart === fact.sourcePageStart &&
+          chunk.pageEnd === fact.sourcePageEnd &&
+          chunk.content.includes(fact.sourceExcerpt.slice(0, 80)),
+      );
+      return db
+        .prepare(
+          `INSERT INTO ${uniriseSchema.documentFacts} (id, document_id, chunk_id, fact_type, subject, predicate, value, unit, source_language, source_page_start, source_page_end, source_locator, source_excerpt, confidence, extraction_origin, review_status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'text', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          document.id,
+          matchingChunk?.id ?? null,
+          fact.factType,
+          fact.subject,
+          fact.predicate,
+          fact.value,
+          fact.unit,
+          document.source_language,
+          fact.sourcePageStart,
+          fact.sourcePageEnd,
+          `page ${fact.sourcePageStart}${fact.sourcePageEnd === fact.sourcePageStart ? '' : `-${fact.sourcePageEnd}`}`,
+          fact.sourceExcerpt,
+          0.99,
+          factStatus,
+          now,
+          now,
+        );
+    }),
     db
       .prepare(
         `UPDATE ${uniriseSchema.documents}
@@ -847,6 +900,7 @@ export async function completeDocumentExtraction(
         pageCount,
         characterCount,
         chunkCount: chunks.length,
+        factCount: facts.length,
         excludedChunkCount: options.excludedChunkCount ?? 0,
       },
     ),
