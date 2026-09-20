@@ -214,6 +214,44 @@ describe('chat retrieval', () => {
     logger.mockRestore();
   });
 
+  it('returns a relevant approved document excerpt when the provider is unavailable', async () => {
+    const database = new ContentDatabase();
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed: async () => true,
+      retrieveKnowledge: async () => [
+        {
+          id: 'document:promix:chunk:screen',
+          title: '技術文件：Promix Visco P（第 3 頁）',
+          content:
+            'Promix Visco P Inline viscosity measurement. Touch screen size: 10.1 inch. The display is used for process monitoring.',
+          tags: ['技術文件'],
+        },
+      ],
+      fetcher: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    const response = await handler(
+      new Request('https://unirise.example/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locale: 'zh-TW',
+          message:
+            'What is the touch screen size of Promix Visco P Inline viscosity measurement?',
+        }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      answer: expect.stringContaining('Touch screen size: 10.1 inch'),
+      sources: [{ title: '技術文件：Promix Visco P（第 3 頁）' }],
+    });
+  });
+
   it('returns reviewed voltage data when a technical-document answer cannot reach the chat provider', async () => {
     const database = new ContentDatabase();
     const handler = createChatHandler({

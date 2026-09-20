@@ -201,6 +201,55 @@ function technicalFallbackAnswer(
   return null;
 }
 
+function documentExcerptFallback(
+  locale: Locale,
+  sources: KnowledgeSource[],
+  question: string,
+) {
+  const documentSources = sources.filter((source) => !source.href);
+  if (!documentSources.length) return null;
+  const words = question
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter((word) => word.length >= 3)
+    .filter(
+      (word) =>
+        !['what', 'which', 'with', 'have', 'that', 'this', 'size', 'the'].includes(
+          word,
+        ),
+    ) ?? [];
+  const preferredPattern = /touch\s*screen|screen\s*size|display\s*size/i;
+  const ranked = documentSources
+    .map((source) => {
+      const content = source.content.replace(/\s+/g, ' ').trim();
+      const matchedWords = words.filter((word) =>
+        content.toLowerCase().includes(word),
+      ).length;
+      const preferredMatch = preferredPattern.exec(content);
+      return {
+        content,
+        matchedWords,
+        preferredIndex: preferredMatch?.index ?? -1,
+      };
+    })
+    .filter(({ content, matchedWords, preferredIndex }) =>
+      Boolean(content) && (matchedWords > 0 || preferredIndex >= 0),
+    )
+    .sort(
+      (left, right) =>
+        Number(right.preferredIndex >= 0) - Number(left.preferredIndex >= 0) ||
+        right.matchedWords - left.matchedWords,
+    );
+  const best = ranked[0];
+  if (!best) return null;
+  const startAt = Math.max(0, (best.preferredIndex >= 0 ? best.preferredIndex : 0) - 90);
+  const excerpt = best.content.slice(startAt, startAt + 360).trim();
+  if (!excerpt) return null;
+  return locale === 'en'
+    ? `According to the approved technical document, the relevant text is: ${excerpt}`
+    : `依已核准的技術文件，相關原文為：${excerpt}`;
+}
+
 function sourceFallbackAnswer(
   locale: Locale,
   sources: KnowledgeSource[],
@@ -215,6 +264,8 @@ function sourceFallbackAnswer(
   if (voltageAnswer) return voltageAnswer;
   const technicalAnswer = technicalFallbackAnswer(locale, sources, question);
   if (technicalAnswer) return technicalAnswer;
+  const documentAnswer = documentExcerptFallback(locale, sources, question);
+  if (documentAnswer) return documentAnswer;
   return locale === 'en'
     ? 'The assistant is temporarily unable to confirm this detail from the available public information. Please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
     : '網站助理暫時無法從現有公開資料確認這項細節。請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。';
