@@ -214,7 +214,7 @@ describe('chat retrieval', () => {
     logger.mockRestore();
   });
 
-  it('returns a relevant approved document excerpt when the provider is unavailable', async () => {
+  it('summarizes a touch-screen specification in Traditional Chinese when the provider is unavailable', async () => {
     const database = new ContentDatabase();
     const handler = createChatHandler({
       db: database.d1,
@@ -247,8 +247,45 @@ describe('chat retrieval', () => {
     );
 
     await expect(response.json()).resolves.toMatchObject({
-      answer: expect.stringContaining('Touch screen size: 10.1 inch'),
+      answer:
+        '依已核准的技術文件，這套設備配備 10.1 吋觸控螢幕面板電腦，並搭配相對應軟體。',
       sources: [{ title: '技術文件：Promix Visco P（第 3 頁）' }],
+    });
+  });
+
+  it('uses Traditional Chinese for a Chinese question even from an English page', async () => {
+    const database = new ContentDatabase();
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed: async () => true,
+      retrieveKnowledge: async () => [
+        {
+          id: 'document:promix:chunk:screen',
+          title: '技術文件：Promix Visco P（第 3 頁）',
+          content: 'The machine uses a 15" touch screen panel PC.',
+          tags: ['技術文件'],
+        },
+      ],
+      fetcher: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    const response = await handler(
+      new Request('https://unirise.example/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locale: 'en',
+          message: 'Promix Visco P 的觸控螢幕大小是多少？',
+        }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      answer:
+        '依已核准的技術文件，這套設備配備 15 吋觸控螢幕面板電腦，並搭配相對應軟體。',
     });
   });
 

@@ -26,7 +26,7 @@ const QWEN_FALLBACK_STATUSES = new Set([
 const systemPrompts: Record<Locale, string> = {
   'zh-TW': `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
-只能根據「網站檢索結果」回答，不能使用外部知識或自行推論。回答時只陳述檢索結果明確記載的內容；不可補充任何產品能力、應用情境、規格、售價、交期、保固、認證、庫存或技術承諾。若檢索結果不足，請直接說明目前網站沒有提供該細節，並建議訪客使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。
+只能根據「網站檢索結果」回答，不能使用外部知識或自行推論。將來源內容消化後，以自己的繁體中文簡潔重述明確記載的事實；不可貼出長篇英文原文、逐字翻譯整段手冊或補充未記載的內容。不可補充任何產品能力、應用情境、規格、售價、交期、保固、認證、庫存或技術承諾。若檢索結果不足，請直接說明目前網站沒有提供該細節，並建議訪客使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。
 不可要求或處理身分證、信用卡、帳密、完整地址或其他敏感個資。`,
   en: `You are the beta customer support assistant for the Unirise website. Respond only in English, briefly, professionally, and kindly.
 
@@ -201,53 +201,25 @@ function technicalFallbackAnswer(
   return null;
 }
 
-function documentExcerptFallback(
+function touchScreenFallbackAnswer(
   locale: Locale,
   sources: KnowledgeSource[],
   question: string,
 ) {
-  const documentSources = sources.filter((source) => !source.href);
-  if (!documentSources.length) return null;
-  const words = question
-    .toLowerCase()
-    .match(/[a-z0-9]+/g)
-    ?.filter((word) => word.length >= 3)
-    .filter(
-      (word) =>
-        !['what', 'which', 'with', 'have', 'that', 'this', 'size', 'the'].includes(
-          word,
-        ),
-    ) ?? [];
-  const preferredPattern = /touch\s*screen|screen\s*size|display\s*size/i;
-  const ranked = documentSources
-    .map((source) => {
-      const content = source.content.replace(/\s+/g, ' ').trim();
-      const matchedWords = words.filter((word) =>
-        content.toLowerCase().includes(word),
-      ).length;
-      const preferredMatch = preferredPattern.exec(content);
-      return {
-        content,
-        matchedWords,
-        preferredIndex: preferredMatch?.index ?? -1,
-      };
-    })
-    .filter(({ content, matchedWords, preferredIndex }) =>
-      Boolean(content) && (matchedWords > 0 || preferredIndex >= 0),
-    )
-    .sort(
-      (left, right) =>
-        Number(right.preferredIndex >= 0) - Number(left.preferredIndex >= 0) ||
-        right.matchedWords - left.matchedWords,
-    );
-  const best = ranked[0];
-  if (!best) return null;
-  const startAt = Math.max(0, (best.preferredIndex >= 0 ? best.preferredIndex : 0) - 90);
-  const excerpt = best.content.slice(startAt, startAt + 360).trim();
-  if (!excerpt) return null;
+  if (!/觸控螢幕|觸摸螢幕|touch\s*screen|screen\s*size/i.test(question))
+    return null;
+  const text = documentText(sources);
+  const size =
+    text.match(
+      /(?:to|with|a|an)?\s*(\d+(?:\.\d+)?)\s*(?:"|″|inch(?:es)?)\s+touch\s*screen/i,
+    )?.[1] ??
+    text.match(
+      /touch\s*screen(?:\s+(?:panel|panel\s+pc))?[^\d]{0,60}(\d+(?:\.\d+)?)\s*(?:"|″|inch(?:es)?)/i,
+    )?.[1];
+  if (!size) return null;
   return locale === 'en'
-    ? `According to the approved technical document, the relevant text is: ${excerpt}`
-    : `依已核准的技術文件，相關原文為：${excerpt}`;
+    ? `According to the approved technical document, this equipment uses a ${size}-inch touch-screen panel PC with the corresponding software.`
+    : `依已核准的技術文件，這套設備配備 ${size} 吋觸控螢幕面板電腦，並搭配相對應軟體。`;
 }
 
 function sourceFallbackAnswer(
@@ -264,7 +236,7 @@ function sourceFallbackAnswer(
   if (voltageAnswer) return voltageAnswer;
   const technicalAnswer = technicalFallbackAnswer(locale, sources, question);
   if (technicalAnswer) return technicalAnswer;
-  const documentAnswer = documentExcerptFallback(locale, sources, question);
+  const documentAnswer = touchScreenFallbackAnswer(locale, sources, question);
   if (documentAnswer) return documentAnswer;
   return locale === 'en'
     ? 'The assistant is temporarily unable to confirm this detail from the available public information. Please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'
@@ -324,12 +296,13 @@ export function createChatHandler({
       return json('invalid_request', 400);
     }
 
-    const locale = parseLocale(body.locale);
+    let locale = parseLocale(body.locale);
     if (!locale) return json('invalid_locale', 400);
-    const chatPath = locale === 'en' ? '/en/chat' : '/chat';
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     if (!message || message.length > MAX_MESSAGE_LENGTH)
       return json('invalid_message', 400);
+    if (/[\u4e00-\u9fff]/.test(message)) locale = 'zh-TW';
+    const chatPath = locale === 'en' ? '/en/chat' : '/chat';
     if (!groqApiKey) return json('chat_not_configured', 503);
 
     const visitorId =
