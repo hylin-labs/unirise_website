@@ -308,6 +308,9 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
           >
             技術文件
           </a>
+          <a className={styles.navLink} href="/admin/ai-health">
+            AI 服務狀態
+          </a>
           <a className={styles.navLink} href="/admin">
             返回管理總覽
           </a>
