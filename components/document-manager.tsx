@@ -12,7 +12,7 @@ import styles from './admin-dashboard.module.css';
 /* oxlint-disable next/no-html-link-for-pages -- Standard anchors avoid Vinext's failing client-side prefetch for these administrative routes. */
 
 const accessLabels = {
-  public: '公開知識（可供審核後的網站助理使用）',
+  public: '公開知識（自動加入網站助理）',
   internal: '內部知識（僅管理後台）',
   confidential: '機密資料（永不供網站助理使用）',
 } as const;
@@ -38,14 +38,14 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   const [category, setCategory] = useState('技術文件');
   const [language, setLanguage] = useState<'zh-TW' | 'en' | 'mixed'>('zh-TW');
   const [access, setAccess] = useState<'public' | 'internal' | 'confidential'>(
-    'internal',
+    'public',
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [review, setReview] = useState<DocumentReview | null>(null);
   const [reviewFilter, setReviewFilter] = useState<
     'review_required' | 'approved' | 'rejected'
-  >('review_required');
+  >('approved');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -112,12 +112,19 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
       });
       if (redirectAdminUnauthorized(response, window.location)) return;
       if (!response.ok) throw new Error('upload_failed');
+      const payload = (await response.json()) as {
+        record: { status: 'approved' | 'excluded' | 'failed' };
+      };
       setFile(null);
       setTitle('');
       setNotice(
-        access === 'confidential'
-          ? '機密文件已安全保存，不會進入網站助理。'
-          : '文件已保存，下一階段可進行文字擷取與審核。',
+        payload.record.status === 'approved'
+          ? access === 'public'
+            ? '文件已完成自動擷取與安全檢查，現在可供網站助理回答。'
+            : '文件已完成自動擷取與安全檢查，保留為內部知識。'
+          : payload.record.status === 'excluded'
+            ? '文件已安全保存；因權限或敏感內容規則，不會提供網站助理使用。'
+            : '文件已保存，但無法讀取文字。請改上傳可搜尋文字的 PDF。',
       );
       await load();
     } catch {
@@ -153,36 +160,6 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
     }
   }
 
-  async function extract(record: KnowledgeDocument) {
-    setSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const response = await fetch('/api/admin/document-extractions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: record.id }),
-      });
-      if (redirectAdminUnauthorized(response, window.location)) return;
-      if (!response.ok) throw new Error('extraction_failed');
-      const result = (await response.json()) as {
-        pageCount: number;
-        chunkCount: number;
-      };
-      setNotice(
-        `文字擷取完成：${result.pageCount} 頁、${result.chunkCount} 個段落。請先人工審核，再提供網站助理使用。`,
-      );
-      await load();
-    } catch {
-      setError(
-        '文字擷取未完成。若文件是掃描檔，下一階段需要 OCR；請稍後再試或改用可搜尋文字的 PDF。',
-      );
-      await load();
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function openReview(record: KnowledgeDocument) {
     setSaving(true);
     setError('');
@@ -196,14 +173,14 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
       if (!response.ok) throw new Error('review_load_failed');
       const payload = (await response.json()) as { review: DocumentReview };
       setReview(payload.review);
-      setReviewFilter('review_required');
+      setReviewFilter('approved');
       setDrafts(
         Object.fromEntries(
           payload.review.chunks.map((chunk) => [chunk.id, chunk.content]),
         ),
       );
     } catch {
-      setError('目前無法載入文件段落，請稍後再試。');
+      setError('目前無法載入文件處理紀錄，請稍後再試。');
     } finally {
       setSaving(false);
     }
@@ -246,12 +223,6 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
 
   async function approveAll() {
     if (!review) return;
-    if (
-      !window.confirm(
-        `確定核准「${review.document.displayTitle}」所有待審段落嗎？核准後才會進入網站助理的可用知識範圍。`,
-      )
-    )
-      return;
     setSaving(true);
     setError('');
     try {
@@ -268,7 +239,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
       const payload = (await response.json()) as { review: DocumentReview };
       setReview(payload.review);
       setReviewFilter('approved');
-      setNotice('待審段落已核准，文件審核狀態已更新。');
+      setNotice('待處理段落已核准。');
       await load();
     } catch {
       setError('無法批次核准，請稍後再試。');
@@ -278,17 +249,21 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   }
 
   function assistantStatusLabel(record: KnowledgeDocument) {
-    if (record.assistantStatus === 'excluded') return '不進入助理';
-    if (record.assistantStatus === 'processing') return '文字擷取中…';
+    if (record.assistantStatus === 'excluded') return '已安全排除';
+    if (record.assistantStatus === 'processing') return '系統自動處理中…';
     if (record.assistantStatus === 'review_required') {
-      return `待人工審核${record.extractionPageCount ? `・${record.extractionPageCount} 頁` : ''}`;
+      return `舊文件待處理${record.extractionPageCount ? `・${record.extractionPageCount} 頁` : ''}`;
     }
-    if (record.assistantStatus === 'approved') return '已加入助理';
+    if (record.assistantStatus === 'approved') {
+      return record.accessLevel === 'public'
+        ? '已加入助理'
+        : '已完成內部處理';
+    }
     if (record.assistantStatus === 'failed')
       return record.extractionError === 'no_extractable_text'
         ? '找不到可擷取文字（需要 OCR）'
-        : '擷取失敗，可重新嘗試';
-    return '尚未開始文字擷取';
+        : '自動處理失敗';
+    return '等待系統自動處理';
   }
 
   return (
@@ -332,7 +307,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
         <article className={styles.panel}>
           <h2>上傳 PDF 文件</h2>
           <p className={styles.panelIntro}>
-            原始檔案僅保存在私有文件庫。公開文件仍必須完成文字擷取與人工審核，才會供網站助理回答。
+            上傳後，系統會自動擷取文字、略過敏感段落，並將可用內容直接加入網站助理。原始 PDF 僅保存在私有文件庫。
           </p>
           <form className={styles.editorForm} onSubmit={upload}>
             <div className={styles.documentUploadField}>
@@ -404,7 +379,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
             </label>
             <div className={styles.editorActions}>
               <button type="submit" disabled={saving}>
-                {saving ? '儲存中…' : '安全保存文件'}
+                {saving ? '上傳並自動處理中…' : '上傳並自動加入助理'}
               </button>
             </div>
           </form>
@@ -443,31 +418,13 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                   </span>
                   <div className={styles.rowActions}>
                     <span>{assistantStatusLabel(record)}</span>
-                    {record.accessLevel !== 'confidential' ? (
-                      <button
-                        type="button"
-                        onClick={() => void extract(record)}
-                        disabled={
-                          saving || record.assistantStatus === 'processing'
-                        }
-                      >
-                        {record.assistantStatus === 'processing'
-                          ? '擷取中…'
-                          : record.assistantStatus === 'review_required'
-                            ? '重新擷取'
-                            : record.assistantStatus === 'failed'
-                              ? '重新嘗試'
-                              : '開始文字擷取'}
-                      </button>
-                    ) : null}
-                    {record.accessLevel !== 'confidential' &&
-                    record.extractionPageCount ? (
+                    {record.extractionPageCount ? (
                       <button
                         type="button"
                         onClick={() => void openReview(record)}
                         disabled={saving}
                       >
-                        人工審核
+                        檢視處理紀錄
                       </button>
                     ) : null}
                     <button
@@ -490,9 +447,9 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
           <article className={styles.panel}>
             <div className={styles.panelHeading}>
               <div>
-                <h2>人工審核：{review.document.displayTitle}</h2>
+                <h2>處理紀錄：{review.document.displayTitle}</h2>
                 <p className={styles.panelIntro}>
-                  檢視內容與頁碼來源；只有核准的段落才會進入網站助理的知識範圍。
+                  這是選用的進階檢視功能；一般上傳已由系統完成安全檢查並自動加入助理。
                 </p>
               </div>
               <div className={styles.headingActions}>
@@ -502,7 +459,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                     onClick={() => void approveAll()}
                     disabled={saving}
                   >
-                    全部核准待審段落
+                    核准舊版待處理段落
                   </button>
                 ) : null}
                 <button
@@ -510,7 +467,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                   onClick={() => setReview(null)}
                   disabled={saving}
                 >
-                  關閉審核
+                  關閉紀錄
                 </button>
               </div>
             </div>
@@ -522,7 +479,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
             <div className={styles.reviewFilters} aria-label="段落審核篩選">
               {(
                 [
-                  ['review_required', '待審段落'],
+                  ['review_required', '舊版待處理'],
                   ['approved', '已核准'],
                   ['rejected', '已排除'],
                 ] as const

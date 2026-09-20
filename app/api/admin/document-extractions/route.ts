@@ -1,13 +1,10 @@
 import { env } from 'cloudflare:workers';
-import { extractText, getDocumentProxy } from 'unpdf';
 import { requireAdmin } from '../../../../lib/admin-auth';
-import { chunkExtractedPages } from '../../../../lib/document-extraction';
+import { automaticallyProcessDocument } from '../../../../lib/document-processing';
 import {
-  completeDocumentExtraction,
   DocumentValidationError,
   failDocumentExtraction,
   findDocumentForExtraction,
-  markDocumentProcessing,
 } from '../../../../lib/document-repository';
 
 type DocumentRuntime = { DB: D1Database; DOCUMENTS?: R2Bucket };
@@ -36,51 +33,33 @@ export function createDocumentExtractionHandler(
     if (!runtime.DOCUMENTS) return json('document_storage_unavailable', 503);
 
     let document: Awaited<ReturnType<typeof findDocumentForExtraction>> = null;
-    let markedProcessing = false;
     try {
       const payload = (await request.json()) as { id?: unknown };
       const id = typeof payload.id === 'string' ? payload.id : '';
       document = await findDocumentForExtraction(runtime.DB, id);
       if (!document) return json('document_not_found', 404);
-      await markDocumentProcessing(runtime.DB, document, actor);
-      markedProcessing = true;
 
-      const stored = await runtime.DOCUMENTS.get(document.storage_key);
-      if (!stored) throw new Error('document_file_not_found');
-      const pdf = await getDocumentProxy(
-        new Uint8Array(await stored.arrayBuffer()),
-      );
-      const extracted = await extractText(pdf, { mergePages: false });
-      const pages = Array.isArray(extracted.text)
-        ? extracted.text
-        : [extracted.text];
-      const { chunks, characterCount } = chunkExtractedPages(pages);
-      if (!chunks.length) throw new Error('no_extractable_text');
-      await completeDocumentExtraction(
-        runtime.DB,
-        document,
-        chunks,
-        extracted.totalPages,
-        characterCount,
+      const result = await automaticallyProcessDocument(
+        { DB: runtime.DB, DOCUMENTS: runtime.DOCUMENTS },
+        id,
         actor,
       );
       return Response.json(
-        {
-          documentId: document.id,
-          pageCount: extracted.totalPages,
-          chunkCount: chunks.length,
-          characterCount,
-          status: 'review_required',
-        },
+        result,
         { headers: { 'Cache-Control': 'no-store' } },
       );
     } catch (error) {
-      if (markedProcessing && document) {
-        const reason =
-          error instanceof Error ? error.message : 'document_extraction_failed';
-        await failDocumentExtraction(runtime.DB, document, actor, reason).catch(
-          () => undefined,
-        );
+      if (document) {
+        const latest = await findDocumentForExtraction(runtime.DB, document.id);
+        if (latest?.assistant_status === 'processing') {
+          const reason =
+            error instanceof Error
+              ? error.message
+              : 'document_extraction_failed';
+          await failDocumentExtraction(runtime.DB, latest, actor, reason).catch(
+            () => undefined,
+          );
+        }
       }
       if (error instanceof DocumentValidationError)
         return json(error.message, 400);

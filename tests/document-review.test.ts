@@ -178,4 +178,62 @@ describe('document review workflow', () => {
       }),
     ]);
   });
+
+  it('can automatically approve screened document chunks for the public assistant', async () => {
+    const { d1 } = sqliteD1();
+    await d1
+      .prepare(
+        `INSERT INTO admin_users (id, email, role, enabled, created_at, updated_at)
+         VALUES (?, ?, 'admin', 1, ?, ?)`,
+      )
+      .bind(
+        admin.id,
+        admin.email,
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+      )
+      .run();
+    await createStoredDocument(
+      d1,
+      createDocumentInput({
+        originalFilename: 'automatic.pdf',
+        displayTitle: '自動處理手冊',
+        category: '技術文件',
+        sourceLanguage: 'en',
+        accessLevel: 'public',
+        fileSize: 100,
+      }),
+      null,
+      admin,
+      'automatic-document-fixture',
+    );
+    const document = await findDocumentForExtraction(
+      d1,
+      'automatic-document-fixture',
+    );
+    if (!document) throw new Error('automatic fixture document missing');
+    await completeDocumentExtraction(
+      d1,
+      document,
+      [
+        {
+          content: 'Automatic screening keeps this safe instruction.',
+          pageStart: 1,
+          pageEnd: 1,
+        },
+      ],
+      1,
+      49,
+      admin,
+      { autoApprove: true, excludedChunkCount: 1 },
+    );
+
+    await expect(
+      retrieveSiteKnowledge(d1, 'en', 'automatic screening'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        title: '技術文件：自動處理手冊（第 1 頁）',
+      }),
+    ]);
+  });
 });

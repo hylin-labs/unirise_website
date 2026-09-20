@@ -1,10 +1,13 @@
 import { env } from 'cloudflare:workers';
 import { requireAdmin } from '../../../../lib/admin-auth';
+import { automaticallyProcessDocument } from '../../../../lib/document-processing';
 import {
   createDocumentInput,
   createStoredDocument,
   deleteDocument,
   DocumentValidationError,
+  failDocumentExtraction,
+  findDocumentForExtraction,
   findDocumentStorageKey,
   listDocuments,
 } from '../../../../lib/document-repository';
@@ -102,16 +105,49 @@ export function createDocumentsAdminHandler(
       const uploaded = await runtime.DOCUMENTS.put(storageKey, request.body, {
         httpMetadata: { contentType: 'application/pdf' },
       });
+      let created = false;
       try {
         await createStoredDocument(runtime.DB, input, uploaded.etag, actor, id);
+        created = true;
       } catch (error) {
         await runtime.DOCUMENTS.delete(storageKey);
         throw error;
       }
-      return Response.json(
-        { record: { id } },
-        { status: 201, headers: { 'Cache-Control': 'no-store' } },
-      );
+
+      if (input.accessLevel === 'confidential') {
+        return Response.json(
+          { record: { id, status: 'excluded' } },
+          { status: 201, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
+
+      try {
+        const result = await automaticallyProcessDocument(
+          { DB: runtime.DB, DOCUMENTS: runtime.DOCUMENTS },
+          id,
+          actor,
+        );
+        return Response.json(
+          { record: { id, ...result } },
+          { status: 201, headers: { 'Cache-Control': 'no-store' } },
+        );
+      } catch (error) {
+        if (created) {
+          const document = await findDocumentForExtraction(runtime.DB, id);
+          if (document?.assistant_status === 'processing') {
+            const reason =
+              error instanceof Error
+                ? error.message
+                : 'document_extraction_failed';
+            await failDocumentExtraction(runtime.DB, document, actor, reason);
+          }
+        }
+        console.error('Automatic document processing failed', error);
+        return Response.json(
+          { record: { id, status: 'failed' } },
+          { status: 201, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
     } catch (error) {
       if (error instanceof DocumentValidationError)
         return json(error.message, 400);

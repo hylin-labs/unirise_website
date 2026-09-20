@@ -484,8 +484,10 @@ export async function completeDocumentExtraction(
   pageCount: number,
   characterCount: number,
   actor: AdminIdentity,
+  options: { autoApprove?: boolean; excludedChunkCount?: number } = {},
 ) {
   const now = new Date().toISOString();
+  const status = options.autoApprove ? 'approved' : 'review_required';
   const statements = [
     db
       .prepare(
@@ -496,7 +498,7 @@ export async function completeDocumentExtraction(
       db
         .prepare(
           `INSERT INTO ${uniriseSchema.documentChunks} (id, document_id, chunk_number, page_start, page_end, language, content, extraction_method, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'text', 'review_required', ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'text', ?, ?, ?)`,
         )
         .bind(
           crypto.randomUUID(),
@@ -506,6 +508,7 @@ export async function completeDocumentExtraction(
           chunk.pageEnd,
           document.source_language,
           chunk.content,
+          status,
           now,
           now,
         ),
@@ -513,19 +516,58 @@ export async function completeDocumentExtraction(
     db
       .prepare(
         `UPDATE ${uniriseSchema.documents}
-         SET assistant_status = 'review_required', extracted_at = ?, extraction_page_count = ?, extraction_characters = ?, extraction_error = NULL, updated_at = ?
+         SET assistant_status = ?, extracted_at = ?, extraction_page_count = ?, extraction_characters = ?, extraction_error = NULL, updated_at = ?
          WHERE id = ?`,
       )
-      .bind(now, pageCount, characterCount, now, document.id),
-    auditStatement(db, actor, 'document.extraction_completed', document.id, {
-      pageCount,
-      characterCount,
-      chunkCount: chunks.length,
-    }),
+      .bind(status, now, pageCount, characterCount, now, document.id),
+    auditStatement(
+      db,
+      actor,
+      options.autoApprove
+        ? 'document.extraction_auto_approved'
+        : 'document.extraction_completed',
+      document.id,
+      {
+        pageCount,
+        characterCount,
+        chunkCount: chunks.length,
+        excludedChunkCount: options.excludedChunkCount ?? 0,
+      },
+    ),
   ];
   for (let start = 0; start < statements.length; start += 80) {
     await db.batch(statements.slice(start, start + 80));
   }
+}
+
+export async function excludeDocumentAfterSafetyScreening(
+  db: D1Database,
+  document: ExtractionDocument,
+  pageCount: number,
+  characterCount: number,
+  excludedChunkCount: number,
+  actor: AdminIdentity,
+) {
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.documentChunks} WHERE document_id = ?`,
+      )
+      .bind(document.id),
+    db
+      .prepare(
+        `UPDATE ${uniriseSchema.documents}
+         SET assistant_status = 'excluded', extracted_at = ?, extraction_page_count = ?, extraction_characters = ?, extraction_error = 'safety_screening_excluded', updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, pageCount, characterCount, now, document.id),
+    auditStatement(db, actor, 'document.extraction_safety_excluded', document.id, {
+      pageCount,
+      characterCount,
+      excludedChunkCount,
+    }),
+  ]);
 }
 
 export async function failDocumentExtraction(
