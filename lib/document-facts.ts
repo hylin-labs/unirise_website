@@ -123,16 +123,16 @@ export function extractDeterministicDocumentFacts(
       normalizedSource,
       'hydraulic_power_supply',
       /4\.2\.\s+Voltage\s+V\/Hz\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/i,
-      (match) => `${match[1]} / ${match[2]}`,
-      'V/Hz',
+      (match) => `${match[1]} V / ${match[2]} Hz`,
+      null,
     );
     addMatch(
       facts,
       normalizedSource,
       'control_voltage',
       /4\.3\.\s+Control\s+voltage\s+V\s+(\d+(?:\.\d+)?)\s*(DC|AC)?/i,
-      (match) => `${match[1]}${match[2] ? ` ${match[2]}` : ''}`,
-      'V',
+      (match) => `${match[1]} V${match[2] ? ` ${match[2]}` : ''}`,
+      null,
     );
     addMatch(
       facts,

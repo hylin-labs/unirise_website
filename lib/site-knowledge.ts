@@ -338,6 +338,13 @@ export function answerFromStructuredFacts(
 ) {
   const zh = locale === 'zh-TW';
   const answer = (zhText: string, enText: string) => (zh ? zhText : enText);
+  const localizedValue = (value: string) =>
+    zh
+      ? value
+          .replace(/\binch\b/gi, '吋')
+          .replace(/\bmonths\b/gi, '個月')
+          .replace(/\s\/\s/g, '／')
+      : value;
   const dimensions = matchingFact(sources, 'dimensions');
   if (
     /尺寸|長寬高|dimensions?|length.*width.*height/i.test(question) &&
@@ -345,27 +352,27 @@ export function answerFromStructuredFacts(
     dimensions
   )
     return answer(
-      `依已核准的技術文件，設備尺寸（長 × 寬 × 高）為 ${dimensions}。`,
+      `依已核准的技術文件，設備尺寸（長 × 寬 × 高）為 ${localizedValue(dimensions)}。`,
       `According to the approved technical document, the equipment dimensions (L × W × H) are ${dimensions}.`,
     );
   const weight = matchingFact(sources, 'weight');
   if (/重量|weight/i.test(question) && weight)
     return answer(
-      `依已核准的技術文件，設備重量為 ${weight}。`,
+      `依已核准的技術文件，設備重量為 ${localizedValue(weight)}。`,
       `According to the approved technical document, the equipment weight is ${weight}.`,
     );
   const temperature = matchingFact(sources, 'housing_temperature_max');
   if (/外殼.*溫度|housing.*temperature/i.test(question) && temperature)
     return answer(
-      `依已核准的技術文件，外殼最高溫度為 ${temperature}。`,
+      `依已核准的技術文件，外殼最高溫度為 ${localizedValue(temperature)}。`,
       `According to the approved technical document, the maximum housing temperature is ${temperature}.`,
     );
   const screenQuantity = matchingFact(sources, 'screen_quantity');
   const screenArea = matchingFact(sources, 'screen_area');
   if (/數量|幾個|how many|quantity|面積|area/i.test(question) && (screenQuantity || screenArea)) {
     const zhDetails = [
-      screenQuantity && `濾網數量為 ${screenQuantity}`,
-      screenArea && `每片濾網面積為 ${screenArea}`,
+      screenQuantity && `濾網數量為 ${localizedValue(screenQuantity)}`,
+      screenArea && `每片濾網面積為 ${localizedValue(screenArea)}`,
     ].filter(Boolean).join('；');
     const enDetails = [
       screenQuantity && `there are ${screenQuantity} screens`,
@@ -379,55 +386,55 @@ export function answerFromStructuredFacts(
   const diameter = matchingFact(sources, 'screen_diameter');
   if (/直徑|diameter/i.test(question) && diameter)
     return answer(
-      `依已核准的技術文件，濾網直徑為 ${diameter}。`,
+      `依已核准的技術文件，濾網直徑為 ${localizedValue(diameter)}。`,
       `According to the approved technical document, the screen diameter is ${diameter}.`,
     );
   const heating = matchingFact(sources, 'heating_voltage');
   if (/加熱.*(?:電壓|輸入)|heating.*(?:voltage|input)/i.test(question) && heating)
     return answer(
-      `依已核准的技術文件，加熱系統輸入電壓為 ${heating}。`,
+      `依已核准的技術文件，加熱系統輸入電壓為 ${localizedValue(heating)}。`,
       `According to the approved technical document, the heating-system input voltage is ${heating}.`,
     );
   const hydraulic = matchingFact(sources, 'hydraulic_power_supply');
   if (/液壓.*(?:電壓|頻率|供電)|hydraulic.*(?:voltage|frequency|power)/i.test(question) && hydraulic)
     return answer(
-      `依已核准的技術文件，液壓動力單元供電為 ${hydraulic}。`,
+      `依已核准的技術文件，液壓動力單元供電為 ${localizedValue(hydraulic)}。`,
       `According to the approved technical document, the hydraulic power-unit supply is ${hydraulic}.`,
     );
   const control = matchingFact(sources, 'control_voltage');
   if (/控制電壓|control voltage/i.test(question) && control)
     return answer(
-      `依已核准的技術文件，控制電壓為 ${control}。`,
+      `依已核准的技術文件，控制電壓為 ${localizedValue(control)}。`,
       `According to the approved technical document, the control voltage is ${control}.`,
     );
   const pressure = matchingFact(sources, 'hydraulic_pressure');
   if (/液壓.*壓力|hydraulic pressure/i.test(question) && pressure)
     return answer(
-      `依已核准的技術文件，液壓壓力範圍為 ${pressure}。`,
+      `依已核准的技術文件，液壓壓力範圍為 ${localizedValue(pressure)}。`,
       `According to the approved technical document, the hydraulic pressure range is ${pressure}.`,
     );
   const throughput = matchingFact(sources, 'throughput_rate');
   if (/處理量|throughput/i.test(question) && throughput)
     return answer(
-      `依已核准的技術文件，處理量範圍為 ${throughput}。`,
+      `依已核准的技術文件，處理量範圍為 ${localizedValue(throughput)}。`,
       `According to the approved technical document, the throughput range is ${throughput}.`,
     );
   const touchScreen = matchingFact(sources, 'touch_screen_size');
   if (/觸控螢幕|觸碰螢幕|touch\s*screen/i.test(question) && touchScreen)
     return answer(
-      `依已核准的技術文件，設備配備 ${touchScreen} 的觸控螢幕。`,
+      `依已核准的技術文件，設備配備 ${localizedValue(touchScreen)} 的觸控螢幕。`,
       `According to the approved technical document, the equipment has a ${touchScreen} touch screen.`,
     );
   const supply = matchingFact(sources, 'power_supply');
   if (/供電|電源|power supply/i.test(question) && supply)
     return answer(
-      `依已核准的技術文件，供電規格為 ${supply}。`,
+      `依已核准的技術文件，供電規格為 ${localizedValue(supply)}。`,
       `According to the approved technical document, the power supply is ${supply}.`,
     );
   const retention = matchingFact(sources, 'data_retention');
   if (/保存多久|保存.*資料|data retention|how long.*data/i.test(question) && retention)
     return answer(
-      `依已核准的技術文件，裝置會保存最近 ${retention} 的量測資料。`,
+      `依已核准的技術文件，裝置會保存最近 ${localizedValue(retention)} 的量測資料。`,
       `According to the approved technical document, the device retains measurement data for the last ${retention}.`,
     );
   const purpose = matchingFact(sources, 'measurement_purpose');
