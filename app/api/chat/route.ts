@@ -17,7 +17,8 @@ import {
 
 const MAX_MESSAGE_LENGTH = 700;
 const MAX_BODY_BYTES = 12_000;
-const GROQ_MODEL = 'openai/gpt-oss-120b';
+const PRIMARY_GROQ_MODEL = 'qwen/qwen3.8-27b';
+const FALLBACK_GROQ_MODEL = 'openai/gpt-oss-120b';
 const systemPrompts: Record<Locale, string> = {
   'zh-TW': `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
@@ -347,29 +348,34 @@ export function createChatHandler({
       .join('\n\n');
 
     try {
-      const upstream = await fetcher(
-        'https://api.groq.com/openai/v1/chat/completions',
+      const messages = [
         {
+          role: 'system' as const,
+          content: `${systemPrompts[locale]}\n\n${locale === 'en' ? 'Website retrieval results:' : '網站檢索結果：'}\n${websiteContext}`,
+        },
+        ...validHistory(body.history),
+        { role: 'user' as const, content: message },
+      ];
+      const requestCompletion = (model: string) =>
+        fetcher('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${groqApiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: GROQ_MODEL,
+            model,
             temperature: 0,
             max_tokens: 260,
-            messages: [
-              {
-                role: 'system',
-                content: `${systemPrompts[locale]}\n\n${locale === 'en' ? 'Website retrieval results:' : '網站檢索結果：'}\n${websiteContext}`,
-              },
-              ...validHistory(body.history),
-              { role: 'user', content: message },
-            ],
+            messages,
           }),
-        },
-      );
+        });
+      let upstream = await requestCompletion(PRIMARY_GROQ_MODEL);
+
+      // Qwen is a preview model. If Groq reports that it is no longer available,
+      // retry once with the stable GPT-OSS model before using the safe document fallback.
+      if (!upstream.ok && [400, 404, 410, 422].includes(upstream.status))
+        upstream = await requestCompletion(FALLBACK_GROQ_MODEL);
 
       if (!upstream.ok) {
         reportChatProviderFailure('http', {
