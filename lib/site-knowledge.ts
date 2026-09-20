@@ -74,11 +74,24 @@ function queryTerms(value: string) {
     ],
     [/液壓|hydraulic/i, ['hydraulic', 'power', 'pressure', 'unit']],
     [/篩網|濾網|screen|filter/i, ['screen', 'filter', 'backflush', 'changer']],
+    [
+      /維護|保養|maintenance/i,
+      ['maintenance', 'maintain', 'shut', 'disconnect', 'power'],
+    ],
   ];
   for (const [pattern, expansion] of technicalExpansions) {
     if (pattern.test(value)) terms.push(...expansion);
   }
   return [...new Set(terms)];
+}
+
+function hasVoltageIntent(query: string) {
+  return (
+    /電壓|伏特|voltage|volt/i.test(query) ||
+    /(?:多少|幾|how much|what|which).*(?:供電|輸入|input|supply|power supply)/i.test(
+      query,
+    )
+  );
 }
 
 function knowledgeScore(source: SiteKnowledgeSource, terms: string[]) {
@@ -95,11 +108,7 @@ function technicalSpecificationScore(
   source: SiteKnowledgeSource,
   query: string,
 ) {
-  if (
-    source.href ||
-    !/(電壓|伏特|供電|電源|voltage|volt|power supply)/i.test(query)
-  )
-    return 0;
+  if (source.href || !hasVoltageIntent(query)) return 0;
 
   const content = source.content.replace(/\s+/g, ' ');
   let score = 0;

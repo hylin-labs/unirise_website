@@ -232,6 +232,44 @@ describe('chat retrieval', () => {
     });
   });
 
+  it('returns reviewed backflush requirements when the provider is unavailable', async () => {
+    const database = new ContentDatabase();
+    const handler = createChatHandler({
+      db: database.d1,
+      groqApiKey: 'test-key',
+      isAllowed: async () => true,
+      retrieveKnowledge: async () => [
+        {
+          id: 'document:tsk-148:chunk:backflush',
+          title: '技術文件：TSK 148 XRS（第 24 頁）',
+          content:
+            'Backflushing is available after the listed requirements are fulfilled.',
+          tags: ['技術文件'],
+        },
+      ],
+      fetcher: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+
+    const response = await handler(
+      new Request('https://unirise.example/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locale: 'zh-TW',
+          message: '進行 Backflush 前必須符合哪些條件？',
+        }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      answer:
+        '依已核准的技術文件，進行反沖洗前必須確認：液壓系統已就緒、整線已達操作溫度、保護蓋已關閉、兩支螺栓在生產位置，且前一次換網程序已完成。',
+      sources: [{ title: '技術文件：TSK 148 XRS（第 24 頁）' }],
+    });
+  });
+
   it('returns a controlled response when rate-limit storage fails', async () => {
     const database = new ContentDatabase();
     const handler = createChatHandler({

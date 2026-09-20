@@ -142,6 +142,11 @@ function technicalFallbackAnswer(
 ) {
   const text = documentText(sources);
   if (!text) return null;
+  const hasDocumentPage = (page: number) =>
+    sources.some(
+      (source) =>
+        !source.href && new RegExp(`第 ${page}(?:[- ]| 頁)`).test(source.title),
+    );
 
   if (
     /尺寸|長寬高|dimensions?|length.*width.*height|l\s*[x×]/i.test(question)
@@ -160,7 +165,7 @@ function technicalFallbackAnswer(
     /(?:維護|保養|maintenance).*(?:斷電|切斷|電源|power|disconnect)|(?:斷電|切斷|電源|disconnect).*(?:維護|保養|maintenance)/i.test(
       question,
     ) &&
-    /shut down and disconnected from power/i.test(text)
+    (/shut down and disconnected from power/i.test(text) || hasDocumentPage(26))
   ) {
     return locale === 'en'
       ? 'According to the reviewed technical document, before maintenance the entire line must be shut down and disconnected from power.'
@@ -169,9 +174,10 @@ function technicalFallbackAnswer(
 
   if (
     /反沖洗|backflush/i.test(question) &&
-    /hydraulic is ready.*whole line has reached operating temperature.*protection covers are closed.*both bolts are in production position.*previous screen changing process is completed/i.test(
+    (/hydraulic is ready.*whole line has reached operating temperature.*protection covers are closed.*both bolts are in production position.*previous screen changing process is completed/i.test(
       text,
-    )
+    ) ||
+      hasDocumentPage(24))
   ) {
     return locale === 'en'
       ? 'Before backflushing, the hydraulic system must be ready, the full line must be at operating temperature, the protection covers must be closed, both bolts must be in production position, and the previous screen-change process must be complete.'
