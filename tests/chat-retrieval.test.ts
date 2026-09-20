@@ -16,7 +16,7 @@ const admin: AdminIdentity = {
 };
 
 describe('chat retrieval', () => {
-  it('returns source links only for matching published knowledge', async () => {
+  it('returns only the concise answer for matching published knowledge', async () => {
     const database = new ContentDatabase();
     await saveKnowledge(
       database.d1,
@@ -65,7 +65,6 @@ describe('chat retrieval', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       answer: '公開回答',
-      sources: [{ title: 'XAVIS source', href: '/catalog?type=brand&id=2' }],
     });
   });
 
@@ -205,7 +204,6 @@ describe('chat retrieval', () => {
     await expect(response.json()).resolves.toEqual({
       answer:
         '網站助理暫時無法從現有公開資料確認這項細節。請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。',
-      sources: [{ title: '食品分選方案', href: '/catalog?type=industry&id=1' }],
     });
     expect(logger).toHaveBeenCalledWith('chat_provider_failure', {
       kind: 'request',
@@ -248,8 +246,7 @@ describe('chat retrieval', () => {
 
     await expect(response.json()).resolves.toMatchObject({
       answer:
-        '依已核准的技術文件，這套設備配備 10.1 吋觸控螢幕面板電腦，並搭配相對應軟體。',
-      sources: [{ title: '技術文件：Promix Visco P（第 3 頁）' }],
+        '這套設備配備 10.1 吋觸控螢幕面板電腦，並搭配相對應軟體。',
     });
   });
 
@@ -285,7 +282,7 @@ describe('chat retrieval', () => {
 
     await expect(response.json()).resolves.toMatchObject({
       answer:
-        '依已核准的技術文件，這套設備配備 15 吋觸控螢幕面板電腦，並搭配相對應軟體。',
+        '這套設備配備 15 吋觸控螢幕面板電腦，並搭配相對應軟體。',
     });
   });
 
@@ -322,8 +319,7 @@ describe('chat retrieval', () => {
 
     await expect(response.json()).resolves.toEqual({
       answer:
-        '依已核准的技術文件：加熱系統為 400 V；液壓動力單元為 400 V／50 Hz；控制電壓為 24 V DC。',
-      sources: [{ title: '技術文件：TSK 148 XRS（第 41 頁）' }],
+        '加熱系統為 400 V；液壓動力單元為 400 V／50 Hz；控制電壓為 24 V DC。',
     });
   });
 
@@ -359,8 +355,7 @@ describe('chat retrieval', () => {
 
     await expect(response.json()).resolves.toEqual({
       answer:
-        '依已核准的技術文件，TSK 148 XRS 的尺寸（長 × 寬 × 高）為 2993 × 606 × 1372 mm。',
-      sources: [{ title: '技術文件：TSK 148 XRS（第 46 頁）' }],
+        'TSK 148 XRS 的尺寸（長 × 寬 × 高）為 2993 × 606 × 1372 mm。',
     });
   });
 
@@ -396,8 +391,7 @@ describe('chat retrieval', () => {
     );
 
     await expect(response.json()).resolves.toEqual({
-      answer: '依已核准的技術文件，開始維護前必須關閉整條生產線並斷開電源。',
-      sources: [{ title: '技術文件：TSK 148 XRS（第 26 頁）' }],
+      answer: '開始維護前，必須關閉整條生產線並斷開電源。',
     });
   });
 
@@ -434,8 +428,7 @@ describe('chat retrieval', () => {
 
     await expect(response.json()).resolves.toEqual({
       answer:
-        '依已核准的技術文件，進行反沖洗前必須確認：液壓系統已就緒、整線已達操作溫度、保護蓋已關閉、兩支螺栓在生產位置，且前一次換網程序已完成。',
-      sources: [{ title: '技術文件：TSK 148 XRS（第 24 頁）' }],
+        '進行反沖洗前，請確認液壓系統已就緒、整線已達操作溫度、保護蓋已關閉、兩支螺栓在生產位置，且前一次換網程序已完成。',
     });
   });
 

@@ -176,6 +176,11 @@ class ReleaseDatabase {
     }
     if (query.includes('from chat_knowledge')) return this.knowledge;
     if (
+      query.includes('from knowledge_documents') ||
+      query.includes('from knowledge_document_chunks')
+    )
+      return [];
+    if (
       query.includes('from site_events') &&
       query.includes('unique_visitors')
     ) {
@@ -442,12 +447,7 @@ describe('admin, chatbot, lead, and analytics release flow', () => {
     );
     expect(chatResponse.status).toBe(200);
     await expect(chatResponse.json()).resolves.toMatchObject({
-      sources: [
-        {
-          title: 'XAVIS X-ray 檢測方案',
-          href: '/catalog?type=brand&id=2',
-        },
-      ],
+      answer: expect.any(String),
     });
 
     const leads = createLeadsHandler({

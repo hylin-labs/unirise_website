@@ -91,7 +91,10 @@ describe('bilingual public request contracts', () => {
         requests.push({ url, body: JSON.parse(init.body) });
         return Response.json(
           url === '/api/chat'
-            ? { answer: 'Verified answer', sources: [] }
+            ? {
+                answer: 'Verified answer',
+                sources: [{ title: 'Internal technical document, page 3' }],
+              }
             : { accepted: true },
         );
       }),
@@ -110,6 +113,8 @@ describe('bilingual public request contracts', () => {
       (button) => button.textContent === 'Inspection equipment',
     )!;
     await act(async () => suggestion.click());
+    expect(container.textContent).toContain('Verified answer');
+    expect(container.textContent).not.toContain('Internal technical document');
     expect(requests[0]).toEqual({
       url: '/api/chat',
       body: { locale: 'en', message: 'Inspection equipment', history: [] },

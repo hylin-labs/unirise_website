@@ -8,11 +8,9 @@ import { initialPublicContent } from '../lib/public-content';
 import type { ChromePayload } from '../lib/translation-types';
 import styles from './support-chat.module.css';
 
-type ChatSource = { title: string; href?: string };
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
-  sources?: ChatSource[];
 };
 type LeadRequestType = 'quote' | 'specialist';
 
@@ -71,7 +69,6 @@ export function SupportChat({
       const payload = (await response.json()) as {
         answer?: string;
         error?: string;
-        sources?: ChatSource[];
       };
       setMessages((current) => [
         ...current,
@@ -81,7 +78,6 @@ export function SupportChat({
             response.ok && payload.answer
               ? payload.answer
               : errorMessage(labels, payload.error),
-          sources: response.ok ? payload.sources : undefined,
         },
       ]);
       if (response.ok && payload.answer) setLeadActionsAvailable(true);
@@ -212,24 +208,6 @@ export function SupportChat({
                 >
                   {message.content}
                 </p>
-                {message.role === 'assistant' &&
-                  message.sources &&
-                  message.sources.length > 0 && (
-                    <div className={styles.sources}>
-                      {labels.sources}
-                      {message.sources.map((source, sourceIndex) =>
-                        source.href ? (
-                          <a href={source.href} key={source.href}>
-                            {source.title}
-                          </a>
-                        ) : (
-                          <span key={`${source.title}-${sourceIndex}`}>
-                            {source.title}
-                          </span>
-                        ),
-                      )}
-                    </div>
-                  )}
               </div>
             ))}
             {sending && (

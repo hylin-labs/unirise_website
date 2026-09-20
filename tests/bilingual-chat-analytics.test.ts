@@ -76,12 +76,6 @@ describe('bilingual chat and analytics', () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({
         answer: 'Verified answer.',
-        sources: [
-          {
-            title: 'Inspection equipment',
-            href: '/en/catalog?type=brand&id=2',
-          },
-        ],
       });
       const upstreamBody = (
         fetcher.mock.calls[0] as unknown as [string, RequestInit]
@@ -108,13 +102,9 @@ describe('bilingual chat and analytics', () => {
         fetcher,
       });
       const response = await handler(request('en'));
-      const payload = (await response.json()) as {
-        answer: string;
-        sources: unknown[];
-      };
+      const payload = (await response.json()) as { answer: string };
       expect(payload.answer).toContain('website');
       expect(payload.answer).not.toMatch(/[\u4e00-\u9fff]/);
-      expect(payload.sources).toEqual([]);
       expect(fetcher).not.toHaveBeenCalled();
     },
   );
@@ -131,7 +121,6 @@ describe('bilingual chat and analytics', () => {
       });
       const response = await handler(request('en'));
       expect(await response.json()).toMatchObject({
-        sources: [],
         answer: expect.stringContaining('website'),
       });
       expect(fetcher).not.toHaveBeenCalled();
@@ -227,7 +216,6 @@ describe('bilingual chat and analytics', () => {
     });
     expect(await (await handler(request('zh-TW'))).json()).toMatchObject({
       answer: expect.stringContaining('目前網站沒有提供'),
-      sources: [],
     });
   });
 

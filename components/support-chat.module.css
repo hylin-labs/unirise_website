@@ -96,17 +96,6 @@
   background: #414042;
   color: #fff;
 }
-.sources {
-  margin: -5px 0 11px;
-  color: #6d6e71;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.sources a {
-  margin-left: 5px;
-  color: #a80e15;
-  text-decoration: underline;
-}
 .suggestions {
   display: flex;
   flex-wrap: wrap;

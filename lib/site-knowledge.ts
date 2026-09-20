@@ -353,7 +353,10 @@ export function answerFromStructuredFacts(
   question: string,
 ) {
   const zh = locale === 'zh-TW';
-  const answer = (zhText: string, enText: string) => (zh ? zhText : enText);
+  const answer = (zhText: string, enText: string) =>
+    (zh ? zhText : enText)
+      .replace(/^依已核准的技術文件[，：]/, '')
+      .replace(/^According to the approved technical document,?\s*/i, '');
   const localizedValue = (value: string) =>
     zh
       ? value
