@@ -278,7 +278,7 @@ describe('chat retrieval', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           locale: 'en',
-          message: 'Promix Visco P 的觸控螢幕大小是多少？',
+          message: 'Promix Visco P 的觸碰螢幕大小是多少？',
         }),
       }),
     );

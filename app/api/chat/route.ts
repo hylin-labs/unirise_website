@@ -206,7 +206,11 @@ function touchScreenFallbackAnswer(
   sources: KnowledgeSource[],
   question: string,
 ) {
-  if (!/觸控螢幕|觸摸螢幕|touch\s*screen|screen\s*size/i.test(question))
+  if (
+    !/觸控螢幕|觸摸螢幕|觸碰螢幕|touch\s*screen|screen\s*size/i.test(
+      question,
+    )
+  )
     return null;
   const text = documentText(sources);
   const size =
