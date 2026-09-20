@@ -7,7 +7,10 @@ import {
   createStoredDocument,
   findDocumentForExtraction,
   getDocumentReview,
+  listApprovedDocumentFacts,
+  reviewDocumentKnowledgeFact,
   reviewDocumentChunk,
+  upsertDocumentKnowledgeFact,
 } from '../lib/document-repository';
 import { retrieveSiteKnowledge } from '../lib/site-knowledge';
 import { sqliteD1 } from './helpers/sqlite-d1';
@@ -233,6 +236,60 @@ describe('document review workflow', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         title: '技術文件：自動處理手冊（第 1 頁）',
+      }),
+    ]);
+  });
+
+  it('keeps extracted facts private until both document and fact are approved', async () => {
+    const d1 = await reviewedFixture();
+    const review = await getDocumentReview(d1, 'document-review-fixture');
+    const chunk = review.chunks[0];
+    await upsertDocumentKnowledgeFact(
+      d1,
+      {
+        documentId: review.document.id,
+        chunkId: chunk.id,
+        factType: 'specification',
+        subject: 'X-ray inspection system',
+        predicate: 'detects',
+        value: 'foreign material',
+        sourceLanguage: 'en',
+        sourcePageStart: 1,
+        sourcePageEnd: 1,
+        sourceExcerpt: 'X-ray inspection detects foreign material.',
+        confidence: 0.98,
+        extractionOrigin: 'text',
+      },
+      admin,
+      'fact-review-fixture',
+    );
+    await expect(listApprovedDocumentFacts(d1)).resolves.toEqual([]);
+
+    await reviewDocumentChunk(
+      d1,
+      {
+        documentId: review.document.id,
+        chunkId: chunk.id,
+        action: 'approve',
+      },
+      admin,
+    );
+    await approveAllDocumentChunks(d1, review.document.id, admin);
+    await reviewDocumentKnowledgeFact(
+      d1,
+      {
+        documentId: review.document.id,
+        factId: 'fact-review-fixture',
+        reviewStatus: 'approved',
+      },
+      admin,
+    );
+
+    await expect(listApprovedDocumentFacts(d1)).resolves.toEqual([
+      expect.objectContaining({
+        id: 'fact-review-fixture',
+        predicate: 'detects',
+        sourcePageStart: 1,
       }),
     ]);
   });

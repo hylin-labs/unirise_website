@@ -22,6 +22,9 @@ export const uniriseSchema = {
   translationJobItems: 'translation_job_items',
   documents: 'knowledge_documents',
   documentChunks: 'knowledge_document_chunks',
+  documentLineages: 'knowledge_document_lineages',
+  documentVersions: 'knowledge_document_versions',
+  documentFacts: 'knowledge_document_facts',
 } as const;
 
 export type VisitorStats = {

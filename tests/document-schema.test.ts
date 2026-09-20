@@ -26,6 +26,22 @@ describe('document knowledge storage', () => {
     expect(migration).toContain('extraction_error');
   });
 
+  it('adds versioned, reviewable facts without changing the original PDF record', async () => {
+    const migration = await readFile(
+      resolve('drizzle/0006_add_structured_knowledge_foundation.sql'),
+      'utf8',
+    );
+    expect(migration).toContain('CREATE TABLE knowledge_document_lineages');
+    expect(migration).toContain('CREATE TABLE knowledge_document_versions');
+    expect(migration).toContain('CREATE TABLE knowledge_document_facts');
+    expect(migration).toContain(
+      "review_status IN ('pending', 'approved', 'rejected', 'excluded')",
+    );
+    expect(migration).toContain('source_page_start INTEGER NOT NULL');
+    expect(migration).toContain('confidence >= 0 AND confidence <= 1');
+    expect(migration).toContain('ON DELETE SET NULL');
+  });
+
   it('rejects non-PDF files and preserves confidential classification', () => {
     expect(() =>
       createDocumentInput({

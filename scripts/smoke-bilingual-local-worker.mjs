@@ -119,6 +119,7 @@ export default { async fetch(request, env, context) {
     '0003_add_bilingual_content.sql',
     '0004_add_document_knowledge.sql',
     '0005_add_document_extraction_metadata.sql',
+    '0006_add_structured_knowledge_foundation.sql',
   ]) {
     await run([
       'd1',

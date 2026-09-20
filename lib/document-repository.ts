@@ -16,10 +16,38 @@ export const documentAssistantStatuses = [
   'failed',
 ] as const;
 
+export const documentFactTypes = [
+  'specification',
+  'operation',
+  'safety',
+  'maintenance',
+  'compatibility',
+  'contact',
+] as const;
+
+export const documentFactReviewStatuses = [
+  'pending',
+  'approved',
+  'rejected',
+  'excluded',
+] as const;
+
+export const documentFactOrigins = [
+  'text',
+  'ocr',
+  'vision',
+  'model',
+  'manual',
+] as const;
+
 export type DocumentLanguage = (typeof documentLanguages)[number];
 export type DocumentAccessLevel = (typeof documentAccessLevels)[number];
 export type DocumentAssistantStatus =
   (typeof documentAssistantStatuses)[number];
+export type DocumentFactType = (typeof documentFactTypes)[number];
+export type DocumentFactReviewStatus =
+  (typeof documentFactReviewStatuses)[number];
+export type DocumentFactOrigin = (typeof documentFactOrigins)[number];
 
 export type KnowledgeDocument = {
   id: string;
@@ -34,7 +62,34 @@ export type KnowledgeDocument = {
   extractionPageCount: number | null;
   extractionCharacters: number | null;
   extractionError: string | null;
+  sourceHash: string | null;
+  sourceVersion: string | null;
+  processingPipelineVersion: string | null;
+  canonicalFormat: string | null;
+  knowledgeSummaryZh: string | null;
+  knowledgeSummaryEn: string | null;
+  publicKnowledgeAt: string | null;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type DocumentKnowledgeFact = {
+  id: string;
+  documentId: string;
+  chunkId: string | null;
+  factType: DocumentFactType;
+  subject: string;
+  predicate: string;
+  value: string;
+  unit: string | null;
+  sourceLanguage: DocumentLanguage;
+  sourcePageStart: number;
+  sourcePageEnd: number;
+  sourceLocator: string | null;
+  sourceExcerpt: string;
+  confidence: number;
+  extractionOrigin: DocumentFactOrigin;
+  reviewStatus: DocumentFactReviewStatus;
   updatedAt: string;
 };
 
@@ -69,7 +124,34 @@ type DocumentRow = {
   extraction_page_count: number | null;
   extraction_characters: number | null;
   extraction_error: string | null;
+  source_hash: string | null;
+  source_version: string | null;
+  processing_pipeline_version: string | null;
+  canonical_format: string | null;
+  knowledge_summary_zh: string | null;
+  knowledge_summary_en: string | null;
+  public_knowledge_at: string | null;
   created_at: string;
+  updated_at: string;
+};
+
+type DocumentKnowledgeFactRow = {
+  id: string;
+  document_id: string;
+  chunk_id: string | null;
+  fact_type: DocumentFactType;
+  subject: string;
+  predicate: string;
+  value: string;
+  unit: string | null;
+  source_language: DocumentLanguage;
+  source_page_start: number;
+  source_page_end: number;
+  source_locator: string | null;
+  source_excerpt: string;
+  confidence: number;
+  extraction_origin: DocumentFactOrigin;
+  review_status: DocumentFactReviewStatus;
   updated_at: string;
 };
 
@@ -122,6 +204,32 @@ function allowedValue<T extends readonly string[]>(
   throw new DocumentValidationError(`${field} is invalid`);
 }
 
+function optionalText(value: unknown, field: string, maximum: number) {
+  if (value === undefined || value === null || value === '') return null;
+  return requiredText(value, field, maximum);
+}
+
+function pageNumber(value: unknown, field: string) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new DocumentValidationError(
+      `${field} must be a positive page number`,
+    );
+  }
+  return value;
+}
+
+function confidenceValue(value: unknown) {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    value > 1
+  ) {
+    throw new DocumentValidationError('confidence must be between 0 and 1');
+  }
+  return value;
+}
+
 function rowToDocument(row: DocumentRow): KnowledgeDocument {
   return {
     id: row.id,
@@ -136,7 +244,38 @@ function rowToDocument(row: DocumentRow): KnowledgeDocument {
     extractionPageCount: row.extraction_page_count,
     extractionCharacters: row.extraction_characters,
     extractionError: row.extraction_error,
+    sourceHash: row.source_hash,
+    sourceVersion: row.source_version,
+    processingPipelineVersion: row.processing_pipeline_version,
+    canonicalFormat: row.canonical_format,
+    knowledgeSummaryZh: row.knowledge_summary_zh,
+    knowledgeSummaryEn: row.knowledge_summary_en,
+    publicKnowledgeAt: row.public_knowledge_at,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToDocumentFact(
+  row: DocumentKnowledgeFactRow,
+): DocumentKnowledgeFact {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    chunkId: row.chunk_id,
+    factType: row.fact_type,
+    subject: row.subject,
+    predicate: row.predicate,
+    value: row.value,
+    unit: row.unit,
+    sourceLanguage: row.source_language,
+    sourcePageStart: row.source_page_start,
+    sourcePageEnd: row.source_page_end,
+    sourceLocator: row.source_locator,
+    sourceExcerpt: row.source_excerpt,
+    confidence: row.confidence,
+    extractionOrigin: row.extraction_origin,
+    reviewStatus: row.review_status,
     updatedAt: row.updated_at,
   };
 }
@@ -223,6 +362,64 @@ export function createDocumentInput(value: {
   };
 }
 
+export function createDocumentFactInput(value: {
+  documentId: unknown;
+  chunkId?: unknown;
+  factType: unknown;
+  subject: unknown;
+  predicate: unknown;
+  value: unknown;
+  unit?: unknown;
+  sourceLanguage: unknown;
+  sourcePageStart: unknown;
+  sourcePageEnd: unknown;
+  sourceLocator?: unknown;
+  sourceExcerpt: unknown;
+  confidence: unknown;
+  extractionOrigin: unknown;
+  reviewStatus?: unknown;
+}) {
+  const sourcePageStart = pageNumber(value.sourcePageStart, 'sourcePageStart');
+  const sourcePageEnd = pageNumber(value.sourcePageEnd, 'sourcePageEnd');
+  if (sourcePageEnd < sourcePageStart) {
+    throw new DocumentValidationError(
+      'sourcePageEnd must not be before sourcePageStart',
+    );
+  }
+  return {
+    documentId: requiredText(value.documentId, 'documentId', 80),
+    chunkId: optionalText(value.chunkId, 'chunkId', 80),
+    factType: allowedValue(value.factType, 'factType', documentFactTypes),
+    subject: requiredText(value.subject, 'subject', 240),
+    predicate: requiredText(value.predicate, 'predicate', 120),
+    value: requiredText(value.value, 'value', 1_000),
+    unit: optionalText(value.unit, 'unit', 80),
+    sourceLanguage: allowedValue(
+      value.sourceLanguage,
+      'sourceLanguage',
+      documentLanguages,
+    ),
+    sourcePageStart,
+    sourcePageEnd,
+    sourceLocator: optionalText(value.sourceLocator, 'sourceLocator', 500),
+    sourceExcerpt: requiredText(value.sourceExcerpt, 'sourceExcerpt', 6_000),
+    confidence: confidenceValue(value.confidence),
+    extractionOrigin: allowedValue(
+      value.extractionOrigin,
+      'extractionOrigin',
+      documentFactOrigins,
+    ),
+    reviewStatus:
+      value.reviewStatus === undefined
+        ? ('pending' as const)
+        : allowedValue(
+            value.reviewStatus,
+            'reviewStatus',
+            documentFactReviewStatuses,
+          ),
+  };
+}
+
 function storageFilename(value: string) {
   return (
     value
@@ -277,7 +474,7 @@ export async function createStoredDocument(
 export async function listDocuments(db: D1Database) {
   const rows = await db
     .prepare(
-      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, extraction_page_count, extraction_characters, extraction_error, created_at, updated_at
+      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, extraction_page_count, extraction_characters, extraction_error, source_hash, source_version, processing_pipeline_version, canonical_format, knowledge_summary_zh, knowledge_summary_en, public_knowledge_at, created_at, updated_at
        FROM ${uniriseSchema.documents}
        ORDER BY updated_at DESC`,
     )
@@ -290,7 +487,7 @@ async function findDocumentForReview(db: D1Database, id: unknown) {
     throw new DocumentValidationError('id is required');
   return db
     .prepare(
-      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, extraction_page_count, extraction_characters, extraction_error, created_at, updated_at
+      `SELECT id, original_filename, display_title, category, source_language, access_level, assistant_status, mime_type, file_size, extraction_page_count, extraction_characters, extraction_error, source_hash, source_version, processing_pipeline_version, canonical_format, knowledge_summary_zh, knowledge_summary_en, public_knowledge_at, created_at, updated_at
        FROM ${uniriseSchema.documents} WHERE id = ? LIMIT 1`,
     )
     .bind(id)
@@ -326,6 +523,125 @@ export async function getDocumentReview(db: D1Database, id: unknown) {
     chunks,
     summary: reviewSummary(chunks),
   } satisfies DocumentReview;
+}
+
+export async function upsertDocumentKnowledgeFact(
+  db: D1Database,
+  value: Parameters<typeof createDocumentFactInput>[0],
+  actor: AdminIdentity,
+  id = crypto.randomUUID(),
+) {
+  const input = createDocumentFactInput(value);
+  const document = await findDocumentForReview(db, input.documentId);
+  if (!document) throw new DocumentValidationError('document_not_found');
+  if (document.access_level === 'confidential') {
+    throw new DocumentValidationError(
+      'confidential_documents_cannot_add_facts',
+    );
+  }
+  if (input.chunkId) {
+    const chunk = await db
+      .prepare(
+        `SELECT id FROM ${uniriseSchema.documentChunks}
+         WHERE id = ? AND document_id = ? LIMIT 1`,
+      )
+      .bind(input.chunkId, input.documentId)
+      .first<{ id: string }>();
+    if (!chunk) throw new DocumentValidationError('document_chunk_not_found');
+  }
+  const now = new Date().toISOString();
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO ${uniriseSchema.documentFacts} (id, document_id, chunk_id, fact_type, subject, predicate, value, unit, source_language, source_page_start, source_page_end, source_locator, source_excerpt, confidence, extraction_origin, review_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(document_id, subject, predicate, value, source_page_start, source_page_end)
+         DO UPDATE SET chunk_id = excluded.chunk_id, unit = excluded.unit, source_language = excluded.source_language, source_locator = excluded.source_locator, source_excerpt = excluded.source_excerpt, confidence = excluded.confidence, extraction_origin = excluded.extraction_origin, review_status = excluded.review_status, updated_at = excluded.updated_at`,
+      )
+      .bind(
+        id,
+        input.documentId,
+        input.chunkId,
+        input.factType,
+        input.subject,
+        input.predicate,
+        input.value,
+        input.unit,
+        input.sourceLanguage,
+        input.sourcePageStart,
+        input.sourcePageEnd,
+        input.sourceLocator,
+        input.sourceExcerpt,
+        input.confidence,
+        input.extractionOrigin,
+        input.reviewStatus,
+        now,
+        now,
+      ),
+    auditStatement(db, actor, 'document.fact_upserted', input.documentId, {
+      factType: input.factType,
+      sourcePages: [input.sourcePageStart, input.sourcePageEnd],
+      reviewStatus: input.reviewStatus,
+    }),
+  ]);
+}
+
+export async function reviewDocumentKnowledgeFact(
+  db: D1Database,
+  input: { documentId: unknown; factId: unknown; reviewStatus: unknown },
+  actor: AdminIdentity,
+) {
+  const documentId = requiredText(input.documentId, 'documentId', 80);
+  const factId = requiredText(input.factId, 'factId', 80);
+  const reviewStatus = allowedValue(
+    input.reviewStatus,
+    'reviewStatus',
+    documentFactReviewStatuses,
+  );
+  const document = await findDocumentForReview(db, documentId);
+  if (!document) throw new DocumentValidationError('document_not_found');
+  if (document.access_level === 'confidential') {
+    throw new DocumentValidationError(
+      'confidential_documents_cannot_review_facts',
+    );
+  }
+  const now = new Date().toISOString();
+  const [updated] = await db.batch([
+    db
+      .prepare(
+        `UPDATE ${uniriseSchema.documentFacts}
+         SET review_status = ?, updated_at = ?
+         WHERE id = ? AND document_id = ?`,
+      )
+      .bind(reviewStatus, now, factId, documentId),
+    auditStatement(db, actor, 'document.fact_reviewed', documentId, {
+      factId,
+      reviewStatus,
+    }),
+  ]);
+  if (updated.meta.changes !== 1) {
+    throw new DocumentValidationError('document_fact_not_found');
+  }
+}
+
+export async function listApprovedDocumentFacts(db: D1Database, limit = 30) {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new DocumentValidationError('limit must be between 1 and 100');
+  }
+  const rows = await db
+    .prepare(
+      `SELECT facts.id, facts.document_id, facts.chunk_id, facts.fact_type, facts.subject, facts.predicate, facts.value, facts.unit, facts.source_language, facts.source_page_start, facts.source_page_end, facts.source_locator, facts.source_excerpt, facts.confidence, facts.extraction_origin, facts.review_status, facts.updated_at
+       FROM ${uniriseSchema.documentFacts} AS facts
+       INNER JOIN ${uniriseSchema.documents} AS documents ON documents.id = facts.document_id
+       WHERE documents.access_level = 'public'
+         AND documents.assistant_status = 'approved'
+         AND facts.review_status = 'approved'
+       ORDER BY facts.confidence DESC, facts.updated_at DESC
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<DocumentKnowledgeFactRow>();
+  return rows.results.map(rowToDocumentFact);
 }
 
 async function syncDocumentReviewStatus(
@@ -562,11 +878,17 @@ export async function excludeDocumentAfterSafetyScreening(
          WHERE id = ?`,
       )
       .bind(now, pageCount, characterCount, now, document.id),
-    auditStatement(db, actor, 'document.extraction_safety_excluded', document.id, {
-      pageCount,
-      characterCount,
-      excludedChunkCount,
-    }),
+    auditStatement(
+      db,
+      actor,
+      'document.extraction_safety_excluded',
+      document.id,
+      {
+        pageCount,
+        characterCount,
+        excludedChunkCount,
+      },
+    ),
   ]);
 }
 
