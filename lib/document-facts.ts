@@ -187,6 +187,96 @@ export function extractDeterministicDocumentFacts(
     addMatch(
       facts,
       normalizedSource,
+      'intended_use',
+      /device\s+is\s+suitable\s+for\s+determining\s+the\s+flow\s+behavior\s+of\s+plastic\s+melts\s+in\s+production,\s+in\s+the\s+laboratory\s+and\s+for\s+quality\s+assurance\s+purposes/i,
+      () => 'production, laboratory, and quality-assurance evaluation of plastic-melt flow behaviour',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'scope_of_delivery',
+      /scope\s+of\s+delivery\s+includes\s+the\s+measuring\s+module\s+with\s+the\s+necessary\s+sensors,\s+an\s+evaluation\s+unit\s+for\s+processing\s+the\s+signals\s+and\s+transferring\s+them\s+to\s+a\s+15"\s+touch\s+screen\s+panel\s+PC\s+with\s+the\s+corresponding\s+software/i,
+      () => 'measuring module with sensors; evaluation unit; 15-inch touch-screen panel PC with software',
+      null,
+      'specification',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'control_cabinet_power_isolation',
+      /disconnect\s+the\s+power\s+supply\s+before\s+opening\s+the\s+control\s+cabinet/i,
+      () => 'disconnect the power supply before opening the control cabinet',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'touch_panel_operation',
+      /operated\s+either\s+by\s+touching\s+it\s+with\s+a\s+finger\s+or\s+using\s+a\s+corresponding\s+stylus/i,
+      () => 'operate the touch panel with a finger or a suitable stylus',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'measured_values_displayed',
+      /current\s+measured\s+values\s+for\s+viscosity,\s+melt\s+temperature\s+and\s+shear\s+rate\s+are\s+displayed/i,
+      () => 'viscosity, melt temperature, and shear rate',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'smoothing_option',
+      /smoothing\s+can\s+be\s+activated\s+as\s+an\s+option/i,
+      () => 'optional smoothing function',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'report_export',
+      /export\s+the\s+reports\s+to\s+a\s+storage\s+medium.*?USB\s+stick.*?reports\s+are\s+output\s+in\s+PDF\s+format\s+and\s+saved\s+monthly/i,
+      () => 'export reports to a USB storage device in PDF format; reports are saved monthly',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'maintenance_free',
+      /viscosity\s+measuring\s+device\s+is\s+essentially\s+maintenance-free/i,
+      () => 'essentially maintenance-free',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'sensor_calibration_conditions',
+      /calibration\s+process\s+must\s+be\s+carried\s+out\s+with\s+the\s+system\s+heated\s+up\s+and\s+depressurized/i,
+      () => 'calibrate with the system heated up and depressurized',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'fieldbus_interfaces',
+      /following\s+interfaces\s+are\s+available:\s*•?\s*Serial\s+Modbus\s+RTU\s*•\s*EtherNet\/IP\s*•\s*PROFINET\s+Device\s*•\s*PowerLINK\s*•\s*SERCOS\s+III\s*•\s*CANopen\s*•\s*DeviceNet\s*•\s*PROFIBUS\s+DP/i,
+      () => 'Serial Modbus RTU, EtherNet/IP, PROFINET Device, PowerLINK, SERCOS III, CANopen, DeviceNet, and PROFIBUS DP',
+      null,
+      'specification',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
       'maintenance_power_isolation',
       /before\s+(?:starting\s+)?maintenance\s+work\s+(?:the\s+)?entire\s+line\s+(?:has\s+to\s+be|must\s+be)\s+shut\s+down\s+and\s+disconnected\s+from\s+power/i,
       () => 'shut down the entire line and disconnect it from power',

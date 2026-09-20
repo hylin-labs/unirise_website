@@ -184,6 +184,16 @@ function factIntentScore(source: SiteKnowledgeSource, query: string) {
     [/供電|電源|power supply/i, ['power_supply']],
     [/保存多久|保存.*資料|data retention|how long.*data/i, ['data_retention']],
     [/量測|測量|measure/i, ['measurement_purpose']],
+    [/用途|適用|intended use|field of application/i, ['intended_use']],
+    [/交付內容|包含哪些|標準配備|scope of delivery|included/i, ['scope_of_delivery']],
+    [/控制櫃|control cabinet/i, ['control_cabinet_power_isolation']],
+    [/觸控.*(?:操作|使用)|stylus|(?:touch\s*panel.*|operate.*touch\s*panel)(?:operate|use)?/i, ['touch_panel_operation']],
+    [/顯示.*(?:數值|資料)|measured values|viscosity.*(?:temperature|shear)/i, ['measured_values_displayed']],
+    [/平滑|smoothing/i, ['smoothing_option']],
+    [/報告.*(?:匯出|輸出)|export.*report/i, ['report_export']],
+    [/免維護|maintenance.free/i, ['maintenance_free']],
+    [/校正.*(?:條件|加熱|洩壓)|calibration.*(?:heated|depressurized)/i, ['sensor_calibration_conditions']],
+    [/通訊介面|現場匯流排|fieldbus|protocol/i, ['fieldbus_interfaces']],
     [
       /(?:維護|保養|maintenance).*(?:斷電|切斷|電源|power|disconnect)|(?:斷電|切斷|電源|disconnect).*(?:維護|保養|maintenance)/i,
       ['maintenance_power_isolation'],
@@ -444,10 +454,74 @@ export function answerFromStructuredFacts(
       `According to the approved technical document, the device retains measurement data for the last ${retention}.`,
     );
   const purpose = matchingFact(sources, 'measurement_purpose');
-  if (/量測|測量|measure/i.test(question) && purpose)
+  if (
+    /量測|測量|measure/i.test(question) &&
+    !/顯示.*(?:數值|資料)|measured values/i.test(question) &&
+    purpose
+  )
     return answer(
       '依已核准的技術文件，Promix Visco P 用於量測塑料熔體的動態黏度。',
       `According to the approved technical document, Promix Visco P measures ${purpose}.`,
+    );
+  const intendedUse = matchingFact(sources, 'intended_use');
+  if (/用途|適用|intended use|field of application/i.test(question) && intendedUse)
+    return answer(
+      '依已核准的技術文件，Promix Visco P 適用於塑料熔體流動行為的生產、實驗室與品質保證評估。',
+      'According to the approved technical document, Promix Visco P is suitable for production, laboratory, and quality-assurance evaluation of plastic-melt flow behaviour.',
+    );
+  const scopeOfDelivery = matchingFact(sources, 'scope_of_delivery');
+  if (/交付內容|包含哪些|標準配備|scope of delivery|included/i.test(question) && scopeOfDelivery)
+    return answer(
+      '依已核准的技術文件，交付內容包括含感測器的量測模組、訊號處理用評估單元，以及含軟體的 15 吋觸控螢幕面板電腦。',
+      'According to the approved technical document, delivery includes the measuring module with sensors, an evaluation unit, and a 15-inch touch-screen panel PC with software.',
+    );
+  const cabinetIsolation = matchingFact(sources, 'control_cabinet_power_isolation');
+  if (/控制櫃|control cabinet/i.test(question) && cabinetIsolation)
+    return answer(
+      '依已核准的技術文件，開啟控制櫃前必須先斷開電源供應。',
+      'According to the approved technical document, disconnect the power supply before opening the control cabinet.',
+    );
+  const touchPanelOperation = matchingFact(sources, 'touch_panel_operation');
+  if (/觸控.*(?:操作|使用)|stylus|(?:touch\s*panel.*|operate.*touch\s*panel)(?:operate|use)?/i.test(question) && touchPanelOperation)
+    return answer(
+      '依已核准的技術文件，觸控面板可用手指或合適的觸控筆操作。',
+      'According to the approved technical document, operate the touch panel with a finger or a suitable stylus.',
+    );
+  const measuredValues = matchingFact(sources, 'measured_values_displayed');
+  if (/顯示.*(?:數值|資料)|measured values|viscosity.*(?:temperature|shear)/i.test(question) && measuredValues)
+    return answer(
+      '依已核准的技術文件，畫面會顯示黏度、熔體溫度與剪切速率。',
+      'According to the approved technical document, the display shows viscosity, melt temperature, and shear rate.',
+    );
+  const smoothing = matchingFact(sources, 'smoothing_option');
+  if (/平滑|smoothing/i.test(question) && smoothing)
+    return answer(
+      '依已核准的技術文件，系統提供可選用的平滑功能。',
+      'According to the approved technical document, the system provides an optional smoothing function.',
+    );
+  const reportExport = matchingFact(sources, 'report_export');
+  if (/報告.*(?:匯出|輸出)|export.*report/i.test(question) && reportExport)
+    return answer(
+      '依已核准的技術文件，報告可匯出至 USB 儲存裝置，格式為 PDF，並以月為單位儲存。',
+      'According to the approved technical document, reports can be exported to USB storage in PDF format and are saved monthly.',
+    );
+  const maintenanceFree = matchingFact(sources, 'maintenance_free');
+  if (/免維護|maintenance.free/i.test(question) && maintenanceFree)
+    return answer(
+      '依已核准的技術文件，Promix Visco P 黏度量測裝置基本上免維護。',
+      'According to the approved technical document, the Promix Visco P viscosity measuring device is essentially maintenance-free.',
+    );
+  const calibration = matchingFact(sources, 'sensor_calibration_conditions');
+  if (/校正.*(?:條件|加熱|洩壓)|calibration.*(?:heated|depressurized)/i.test(question) && calibration)
+    return answer(
+      '依已核准的技術文件，感測器校正必須在系統已加熱且已洩壓的狀態下進行。',
+      'According to the approved technical document, calibrate the sensor with the system heated up and depressurized.',
+    );
+  const fieldbus = matchingFact(sources, 'fieldbus_interfaces');
+  if (/通訊介面|現場匯流排|fieldbus|protocol/i.test(question) && fieldbus)
+    return answer(
+      '依已核准的技術文件，可選通訊介面包括 Serial Modbus RTU、EtherNet/IP、PROFINET Device、PowerLINK、SERCOS III、CANopen、DeviceNet 與 PROFIBUS DP。',
+      `According to the approved technical document, available fieldbus interfaces are ${fieldbus}.`,
     );
   const maintenance = matchingFact(sources, 'maintenance_power_isolation');
   if (

@@ -34,7 +34,7 @@ function seededKnowledgeDatabase() {
   database.seed('knowledge_document_chunks', {
     id: 'promix-purpose', document_id: 'promix', chunk_number: 0, page_start: 3, page_end: 3,
     language: 'en', status: 'approved',
-    content: 'The purpose of the Promix Visco P viscosity measuring device is to measure and visualize the dynamic viscosity of plastic melts in the extrusion process. The scope of delivery includes an evaluation unit transferring signals to a 15" touch screen panel PC.',
+    content: 'The purpose of the Promix Visco P viscosity measuring device is to measure and visualize the dynamic viscosity of plastic melts in the extrusion process. The device is suitable for determining the flow behavior of plastic melts in production, in the laboratory and for quality assurance purposes. The scope of delivery includes the measuring module with the necessary sensors, an evaluation unit for processing the signals and transferring them to a 15" touch screen panel PC with the corresponding software.',
   });
   database.seed('knowledge_document_chunks', {
     id: 'promix-retention', document_id: 'promix', chunk_number: 1, page_start: 12, page_end: 12,
@@ -60,6 +60,41 @@ function seededKnowledgeDatabase() {
     id: 'tsk-maintenance', document_id: 'tsk', chunk_number: 3, page_start: 26, page_end: 26,
     language: 'en', status: 'approved',
     content: 'Before starting maintenance work the entire line has to be shut down and disconnected from power.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-safety', document_id: 'promix', chunk_number: 3, page_start: 4, page_end: 4,
+    language: 'en', status: 'approved',
+    content: 'CAUTION: Disconnect the power supply before opening the control cabinet.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-operation', document_id: 'promix', chunk_number: 4, page_start: 6, page_end: 6,
+    language: 'en', status: 'approved',
+    content: 'The Promix Visco P viscosity measuring device is operated via a touch panel and can be operated either by touching it with a finger or using a corresponding stylus.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-measurements', document_id: 'promix', chunk_number: 5, page_start: 8, page_end: 8,
+    language: 'en', status: 'approved',
+    content: 'The current measured values for viscosity, melt temperature and shear rate are displayed.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-smoothing', document_id: 'promix', chunk_number: 6, page_start: 10, page_end: 10,
+    language: 'en', status: 'approved',
+    content: 'Smoothing can be activated as an option.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-reports', document_id: 'promix', chunk_number: 7, page_start: 17, page_end: 17,
+    language: 'en', status: 'approved',
+    content: 'To export the reports to a storage medium, press the EXPORT REPORT button and select the storage medium (USB stick). Reports are output in PDF format and saved monthly in subfolders.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-service', document_id: 'promix', chunk_number: 8, page_start: 21, page_end: 21,
+    language: 'en', status: 'approved',
+    content: 'The Promix Visco P viscosity measuring device is essentially maintenance-free. The calibration process must be carried out with the system heated up and depressurized.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'promix-fieldbus', document_id: 'promix', chunk_number: 9, page_start: 23, page_end: 23,
+    language: 'en', status: 'approved',
+    content: 'The following interfaces are available: • Serial Modbus RTU • EtherNet/IP • PROFINET Device • PowerLINK • SERCOS III • CANopen • DeviceNet • PROFIBUS DP The Modbus interface can be set up on any Promix Visco P at the factory.',
   });
   return database;
 }
