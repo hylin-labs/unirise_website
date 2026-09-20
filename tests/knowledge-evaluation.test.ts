@@ -6,8 +6,8 @@ import {
 import { knowledgeEvaluationCases } from './fixtures/knowledge-evaluation-cases';
 
 describe('technical knowledge evaluation baseline', () => {
-  it('contains fifteen source-verified bilingual questions', () => {
-    expect(knowledgeEvaluationCases).toHaveLength(15);
+  it('contains eighteen source-verified bilingual questions', () => {
+    expect(knowledgeEvaluationCases).toHaveLength(18);
     expect(
       new Set(knowledgeEvaluationCases.map((testCase) => testCase.id)).size,
     ).toBe(knowledgeEvaluationCases.length);

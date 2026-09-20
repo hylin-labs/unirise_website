@@ -166,4 +166,37 @@ export const knowledgeEvaluationCases: KnowledgeEvaluationCase[] = [
       page: 3,
     },
   },
+  {
+    id: 'tsk-maintenance-power-isolation-zh',
+    category: 'operation',
+    locale: 'zh-TW',
+    question: '維護 TSK 148 XRS 前需要先斷電嗎？',
+    expectedAnswerTerms: ['關閉', '斷開電源'],
+    expectedCitation: {
+      documentTitle: 'Technical-Documentation-202515474_TSK-148-XRS_R00',
+      page: 26,
+    },
+  },
+  {
+    id: 'tsk-backflush-preconditions-en',
+    category: 'operation',
+    locale: 'en',
+    question: 'What must be ready before backflushing the TSK 148 XRS?',
+    expectedAnswerTerms: ['hydraulic system', 'operating temperature', 'protection covers'],
+    expectedCitation: {
+      documentTitle: 'Technical-Documentation-202515474_TSK-148-XRS_R00',
+      page: 24,
+    },
+  },
+  {
+    id: 'tsk-emergency-stop-en',
+    category: 'operation',
+    locale: 'en',
+    question: 'What does the emergency stop do on the TSK 148 XRS?',
+    expectedAnswerTerms: ['stops', 'movement', 'hydraulic power unit'],
+    expectedCitation: {
+      documentTitle: 'Technical-Documentation-202515474_TSK-148-XRS_R00',
+      page: 25,
+    },
+  },
 ];

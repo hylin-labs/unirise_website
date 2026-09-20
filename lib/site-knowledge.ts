@@ -184,6 +184,12 @@ function factIntentScore(source: SiteKnowledgeSource, query: string) {
     [/供電|電源|power supply/i, ['power_supply']],
     [/保存多久|保存.*資料|data retention|how long.*data/i, ['data_retention']],
     [/量測|測量|measure/i, ['measurement_purpose']],
+    [
+      /(?:維護|保養|maintenance).*(?:斷電|切斷|電源|power|disconnect)|(?:斷電|切斷|電源|disconnect).*(?:維護|保養|maintenance)/i,
+      ['maintenance_power_isolation'],
+    ],
+    [/反沖洗|backflush/i, ['backflush_preconditions']],
+    [/緊急停止|emergency\s*-?\s*stop/i, ['emergency_stop_effect']],
   ];
   return checks.some(
     ([pattern, predicates]) => pattern.test(query) && predicates.includes(predicate),
@@ -442,6 +448,29 @@ export function answerFromStructuredFacts(
     return answer(
       '依已核准的技術文件，Promix Visco P 用於量測塑料熔體的動態黏度。',
       `According to the approved technical document, Promix Visco P measures ${purpose}.`,
+    );
+  const maintenance = matchingFact(sources, 'maintenance_power_isolation');
+  if (
+    /(?:維護|保養|maintenance).*(?:斷電|切斷|電源|power|disconnect)|(?:斷電|切斷|電源|disconnect).*(?:維護|保養|maintenance)/i.test(
+      question,
+    ) &&
+    maintenance
+  )
+    return answer(
+      '依已核准的技術文件，開始維護前必須關閉整條生產線並斷開電源。',
+      'According to the approved technical document, before maintenance the entire line must be shut down and disconnected from power.',
+    );
+  const backflush = matchingFact(sources, 'backflush_preconditions');
+  if (/反沖洗|backflush/i.test(question) && backflush)
+    return answer(
+      '依已核准的技術文件，進行反沖洗前必須確認：液壓系統已就緒、整線已達操作溫度、保護蓋已關閉、兩支螺栓在生產位置，且前一次換網程序已完成。',
+      'According to the approved technical document, before backflushing the hydraulic system must be ready, the full line must be at operating temperature, the protection covers must be closed, both bolts must be in production position, and the previous screen-change process must be complete.',
+    );
+  const emergencyStop = matchingFact(sources, 'emergency_stop_effect');
+  if (/緊急停止|emergency\s*-?\s*stop/i.test(question) && emergencyStop)
+    return answer(
+      '依已核准的技術文件，緊急停止會立即停止換網器移動，並關閉相關液壓動力單元。',
+      'According to the approved technical document, the emergency stop immediately stops screen-changer movement and switches off the associated hydraulic power unit.',
     );
   return null;
 }

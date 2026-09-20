@@ -46,6 +46,21 @@ function seededKnowledgeDatabase() {
     language: 'en', status: 'approved',
     content: 'Panel PC with 15" capacitive touch screen. Power supply 115-230V, 50/60Hz.',
   });
+  database.seed('knowledge_document_chunks', {
+    id: 'tsk-backflush', document_id: 'tsk', chunk_number: 1, page_start: 24, page_end: 24,
+    language: 'en', status: 'approved',
+    content: 'Backflushing may begin when the hydraulic system is ready, the whole line has reached the operating temperature, the protection covers are closed, both bolts are in the production position, and the previous screen changing process is completed.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'tsk-emergency', document_id: 'tsk', chunk_number: 2, page_start: 25, page_end: 25,
+    language: 'en', status: 'approved',
+    content: 'The EMERGENCY-STOP immediately stops screen changer movement and switches off the associated hydraulic power unit.',
+  });
+  database.seed('knowledge_document_chunks', {
+    id: 'tsk-maintenance', document_id: 'tsk', chunk_number: 3, page_start: 26, page_end: 26,
+    language: 'en', status: 'approved',
+    content: 'Before starting maintenance work the entire line has to be shut down and disconnected from power.',
+  });
   return database;
 }
 

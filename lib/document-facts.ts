@@ -184,6 +184,35 @@ export function extractDeterministicDocumentFacts(
       null,
       'operation',
     );
+    addMatch(
+      facts,
+      normalizedSource,
+      'maintenance_power_isolation',
+      /before\s+(?:starting\s+)?maintenance\s+work\s+(?:the\s+)?entire\s+line\s+(?:has\s+to\s+be|must\s+be)\s+shut\s+down\s+and\s+disconnected\s+from\s+power/i,
+      () => 'shut down the entire line and disconnect it from power',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'backflush_preconditions',
+      /hydraulic\s+(?:system\s+)?is\s+ready.*?whole\s+line\s+has\s+reached\s+(?:the\s+)?operating\s+temperature.*?protection\s+covers\s+are\s+closed.*?both\s+bolts\s+are\s+in\s+(?:the\s+)?production\s+position.*?previous\s+screen\s+changing\s+process\s+is\s+completed/i,
+      () =>
+        'hydraulic system ready; line at operating temperature; protection covers closed; both bolts in production position; previous screen-change process complete',
+      null,
+      'operation',
+    );
+    addMatch(
+      facts,
+      normalizedSource,
+      'emergency_stop_effect',
+      /emergency\s*-?\s*stop.*?(?:immediately\s+)?stops?.{0,120}?movement.*?switches?\s+off.{0,120}?hydraulic/i,
+      () =>
+        'immediately stops screen-changer movement and switches off the associated hydraulic power unit',
+      null,
+      'operation',
+    );
   }
   return facts.filter(
     (fact, index, all) =>
