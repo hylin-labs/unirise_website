@@ -337,6 +337,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
           <a className={styles.navLink} href="/admin/documents">
             技術文件
           </a>
+          <a className={styles.navLink} href="/admin/knowledge-quality">
+            知識品質
+          </a>
           <a className={styles.navLink} href="/admin/ai-health">
             AI 服務狀態
           </a>

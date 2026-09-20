@@ -825,6 +825,29 @@
 .hiddenFilters {
   display: none;
 }
+.refreshButton {
+  min-height: 42px;
+  padding: 9px 15px;
+  border: 1px solid #c7161e;
+  border-radius: 5px;
+  background: #c7161e;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.refreshButton:disabled { opacity: 0.55; cursor: wait; }
+.qualityList { display: grid; gap: 10px; }
+.qualityPass, .qualityFail {
+  display: grid;
+  gap: 5px;
+  padding: 13px 15px;
+  border-left: 4px solid;
+  border-radius: 4px;
+}
+.qualityPass { border-color: #24834c; background: #edf9f0; }
+.qualityFail { border-color: #c7161e; background: #fff1f1; }
+.qualityPass span, .qualityFail span, .qualityFail small { color: #666; font-size: 13px; }
 .localeTable {
   overflow-x: auto;
 }
