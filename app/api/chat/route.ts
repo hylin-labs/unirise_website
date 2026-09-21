@@ -246,10 +246,19 @@ function touchScreenFallbackAnswer(
     : `這套設備配備 ${size} 吋觸控螢幕面板電腦，並搭配相對應軟體。`;
 }
 
-function websiteKnowledgeFallbackAnswer(sources: KnowledgeSource[]) {
-  const source = sources.find(
-    (candidate) => candidate.href && candidate.content.trim().length > 0,
-  );
+function websiteKnowledgeFallbackAnswer(
+  sources: KnowledgeSource[],
+  question: string,
+) {
+  const foodSortingSource =
+    /食品.*分選|食材.*分選|food\s*sorting/i.test(question)
+      ? sources.find((candidate) => candidate.id === 'catalog-optimum')
+      : null;
+  const source =
+    foodSortingSource ??
+    sources.find(
+      (candidate) => candidate.href && candidate.content.trim().length > 0,
+    );
   if (!source) return null;
   // 公開網站資料本身已是經整理的內容。供應商暫時不可用時，仍將最相關的
   // 網站資訊直接提供給訪客，而非誤導地說沒有答案。
@@ -272,7 +281,7 @@ function sourceFallbackAnswer(
   if (technicalAnswer) return technicalAnswer;
   const documentAnswer = touchScreenFallbackAnswer(locale, sources, question);
   if (documentAnswer) return documentAnswer;
-  const websiteAnswer = websiteKnowledgeFallbackAnswer(sources);
+  const websiteAnswer = websiteKnowledgeFallbackAnswer(sources, question);
   if (websiteAnswer) return websiteAnswer;
   return locale === 'en'
     ? 'The assistant is temporarily unable to confirm this detail from the available public information. Please use the Inquiry form or contact Unirise at 06-3319283 / info-unirise@unirise.tw.'

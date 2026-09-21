@@ -109,7 +109,7 @@ function knowledgeScore(source: SiteKnowledgeSource, terms: string[]) {
 const canonicalWebsiteTags: Record<string, string[]> = {
   'catalog-services': ['食品分選', 'X 光檢測', '回收再生', '塑膠化工'],
   'catalog-brands': ['代理品牌', '品牌'],
-  'catalog-optimum': ['食品分選', '食材分選'],
+  'catalog-optimum': ['食品分選', '食品分選方案', '食材分選'],
   'catalog-xavis-xray': ['X 光檢測', '食品安全'],
   'catalog-xavis-weight': ['重量檢測', '重量分級'],
   'catalog-contact': ['聯絡方式', '電話', 'Email', '詢價'],

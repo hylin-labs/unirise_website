@@ -203,7 +203,7 @@ describe('chat retrieval', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       answer:
-        '合軒科技的公開服務領域為食品分選、X 光檢測、回收再生與塑膠化工。天然或加工食品原物料可依顏色或外觀瑕疵由自動化分選機完成品質等級分類。各類食品包裝型態可透過 X 光檢查，作為食品出廠前的安全把關。',
+        'OPTIMUM 食材分選系列包括 NOVUS 皮帶式機型（適用新鮮、乾燥或冷凍產品）、VENTUS（適用堅果和乾果）、TRIPLUS 自由落體式機型（適用新鮮、乾燥或冷凍產品）及 MAGNUS（適用易碎水果）。',
     });
     expect(logger).toHaveBeenCalledWith('chat_provider_failure', {
       kind: 'request',
