@@ -6,6 +6,7 @@ import {
 import { uniriseSchema } from '../db/schema';
 import { extractDeterministicDocumentFacts } from './document-facts';
 import type { Locale } from './locales';
+import { legacyKnowledge } from './seed-content-data';
 
 export type SiteKnowledgeSource = Omit<KnowledgeSource, 'href'> & {
   href?: string;
@@ -103,6 +104,32 @@ function knowledgeScore(source: SiteKnowledgeSource, terms: string[]) {
       total + (searchable.includes(term) ? (term.length > 2 ? 3 : 1) : 0),
     0,
   );
+}
+
+const canonicalWebsiteTags: Record<string, string[]> = {
+  'catalog-services': ['食品分選', 'X 光檢測', '回收再生', '塑膠化工'],
+  'catalog-brands': ['代理品牌', '品牌'],
+  'catalog-optimum': ['食品分選', '食材分選'],
+  'catalog-xavis-xray': ['X 光檢測', '食品安全'],
+  'catalog-xavis-weight': ['重量檢測', '重量分級'],
+  'catalog-contact': ['聯絡方式', '電話', 'Email', '詢價'],
+  'catalog-downloads': ['下載專區', '產品資料'],
+};
+
+function canonicalWebsiteKnowledge(): SiteKnowledgeSource[] {
+  return legacyKnowledge.map((source) => ({
+    ...source,
+    tags: canonicalWebsiteTags[source.id] ?? [],
+  }));
+}
+
+function mergeWebsiteKnowledge(
+  canonical: SiteKnowledgeSource[],
+  stored: SiteKnowledgeSource[],
+) {
+  const merged = new Map(canonical.map((source) => [source.id, source]));
+  stored.forEach((source) => merged.set(source.id, source));
+  return [...merged.values()];
 }
 
 function technicalSpecificationScore(
@@ -577,6 +604,12 @@ export async function retrieveSiteKnowledge(
         resolvedLimit,
       )
     : await retrievePublishedKnowledge(db, query, resolvedLimit);
+  // 正式網站的固定公開資訊必須能在首次部署、或知識資料表尚未補齊時
+  // 可靠回答；後台已發布的資料則以相同 id 覆蓋這份基準內容。
+  const canonicalKnowledge =
+    localeRequest && localeOrQuery === 'zh-TW'
+      ? canonicalWebsiteKnowledge()
+      : [];
   const documentKnowledge = await retrieveApprovedDocumentKnowledge(
     db,
     query,
@@ -584,7 +617,10 @@ export async function retrieveSiteKnowledge(
   );
   const terms = queryTerms(query);
 
-  return [...websiteKnowledge, ...documentKnowledge]
+  return [
+    ...mergeWebsiteKnowledge(canonicalKnowledge, websiteKnowledge),
+    ...documentKnowledge,
+  ]
     .map((source) => ({
       source,
       score:

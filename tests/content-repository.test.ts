@@ -63,6 +63,31 @@ function translationFixture(
 }
 
 describe('managed content repository', () => {
+  it('keeps the canonical public website knowledge available to the Traditional Chinese assistant when seed rows are missing', async () => {
+    const database = new ContentDatabase();
+
+    await expect(
+      retrieveSiteKnowledge(database.d1, 'zh-TW', '食品分選'),
+    ).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'catalog-services',
+        title: '公司服務領域',
+      }),
+      expect.objectContaining({
+        id: 'catalog-optimum',
+        title: 'OPTIMUM 食材分選',
+      }),
+    ]));
+    await expect(
+      retrieveSiteKnowledge(database.d1, 'zh-TW', '公司聯絡方式'),
+    ).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'catalog-contact',
+        content: expect.stringContaining('06-3319283'),
+      }),
+    ]));
+  });
+
   it('parses legacy SQLite timestamps as UTC before Taipei display', () => {
     expect(parseDatabaseTimestamp('2026-09-08 12:34:56').toISOString()).toBe(
       '2026-09-08T12:34:56.000Z',

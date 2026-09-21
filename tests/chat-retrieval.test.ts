@@ -203,7 +203,7 @@ describe('chat retrieval', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       answer:
-        '網站助理暫時無法從現有公開資料確認這項細節。請使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。',
+        '合軒科技的公開服務領域為食品分選、X 光檢測、回收再生與塑膠化工。天然或加工食品原物料可依顏色或外觀瑕疵由自動化分選機完成品質等級分類。各類食品包裝型態可透過 X 光檢查，作為食品出廠前的安全把關。',
     });
     expect(logger).toHaveBeenCalledWith('chat_provider_failure', {
       kind: 'request',
