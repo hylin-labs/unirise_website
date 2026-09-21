@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createDocumentInput } from '../lib/document-repository';
+import {
+  createDocumentInput,
+  documentMimeTypeForFilename,
+} from '../lib/document-repository';
 
 describe('document knowledge storage', () => {
   it('keeps source files and extracted chunks in separate tables', async () => {
@@ -42,17 +45,49 @@ describe('document knowledge storage', () => {
     expect(migration).toContain('ON DELETE SET NULL');
   });
 
-  it('rejects non-PDF files and preserves confidential classification', () => {
+  it('accepts common technical document formats and preserves confidential classification', () => {
+    expect(documentMimeTypeForFilename('manual.docx')).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(documentMimeTypeForFilename('presentation.pptx')).toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    );
+    expect(
+      createDocumentInput({
+        originalFilename: 'manual.docx',
+        displayTitle: '技術手冊',
+        category: '技術文件',
+        sourceLanguage: 'en',
+        accessLevel: 'public',
+        fileSize: 100,
+      }),
+    ).toMatchObject({
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    expect(
+      createDocumentInput({
+        originalFilename: 'training.pptx',
+        displayTitle: '教育訓練',
+        category: '技術文件',
+        sourceLanguage: 'zh-TW',
+        accessLevel: 'public',
+        fileSize: 100,
+      }),
+    ).toMatchObject({
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    });
     expect(() =>
       createDocumentInput({
-        originalFilename: 'quote.xlsx',
+        originalFilename: 'legacy-manual.doc',
         displayTitle: '報價',
         category: '報價',
         sourceLanguage: 'zh-TW',
         accessLevel: 'confidential',
         fileSize: 100,
       }),
-    ).toThrow('only PDF files are allowed');
+    ).toThrow('only_pdf_docx_pptx_files_are_allowed');
     expect(
       createDocumentInput({
         originalFilename: 'manual.pdf',

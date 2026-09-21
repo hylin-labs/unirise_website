@@ -43,7 +43,26 @@ function storageFilename(value: string) {
       .normalize('NFKC')
       .replace(/[^a-zA-Z0-9._-]+/g, '-')
       .replace(/^-+|-+$/g, '')
-      .slice(0, 120) || 'document.pdf'
+      .slice(0, 120) || 'document'
+  );
+}
+
+function hasExpectedFileSignature(bytes: Uint8Array, mimeType: string) {
+  if (mimeType === 'application/pdf')
+    return (
+      bytes.length >= 5 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46 &&
+      bytes[4] === 0x2d
+    );
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4b &&
+    bytes[2] === 0x03 &&
+    bytes[3] === 0x04
   );
 }
 
@@ -79,10 +98,8 @@ export function createDocumentsAdminHandler(
       }
       if (request.method !== 'POST') return json('method_not_allowed', 405);
       if (!runtime.DOCUMENTS) return json('document_storage_unavailable', 503);
-      const contentLength = Number(
-        request.headers.get('x-document-file-size') ??
-          request.headers.get('content-length'),
-      );
+      if (!request.body) return json('file_required', 400);
+      const bytes = new Uint8Array(await request.arrayBuffer());
       const input = createDocumentInput({
         originalFilename: decodedHeader(
           request,
@@ -92,18 +109,18 @@ export function createDocumentsAdminHandler(
         category: decodedHeader(request, 'x-document-category'),
         sourceLanguage: request.headers.get('x-document-language'),
         accessLevel: request.headers.get('x-document-access'),
-        fileSize: contentLength,
+        fileSize: bytes.byteLength,
       });
       const contentType = request.headers.get('content-type')?.split(';')[0];
-      if (contentType !== 'application/pdf') {
-        return json('only_pdf_files_are_allowed', 400);
-      }
-      if (!request.body) return json('file_required', 400);
+      if (contentType !== input.mimeType)
+        return json('document_content_type_mismatch', 400);
+      if (!hasExpectedFileSignature(bytes, input.mimeType))
+        return json('document_file_signature_invalid', 400);
 
       const id = crypto.randomUUID();
       const storageKey = `documents/${id}/${storageFilename(input.originalFilename)}`;
-      const uploaded = await runtime.DOCUMENTS.put(storageKey, request.body, {
-        httpMetadata: { contentType: 'application/pdf' },
+      const uploaded = await runtime.DOCUMENTS.put(storageKey, bytes, {
+        httpMetadata: { contentType: input.mimeType },
       });
       let created = false;
       try {

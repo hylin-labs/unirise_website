@@ -17,6 +17,31 @@ const accessLabels = {
   confidential: '機密資料（永不供網站助理使用）',
 } as const;
 
+const MAX_BATCH_FILES = 20;
+
+function documentMimeType(filename: string) {
+  if (/\.pdf$/i.test(filename)) return 'application/pdf';
+  if (/\.docx$/i.test(filename))
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (/\.pptx$/i.test(filename))
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  return null;
+}
+
+function displayTitleFromFilename(filename: string) {
+  return filename.replace(/\.(?:pdf|docx|pptx)$/i, '');
+}
+
+function documentFormatLabel(mimeType: KnowledgeDocument['mimeType']) {
+  if (mimeType === 'application/pdf') return 'PDF';
+  if (
+    mimeType ===
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  )
+    return 'Word';
+  return 'PowerPoint';
+}
+
 function formatSize(bytes: number) {
   return `${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 }).format(bytes / 1_048_576)} MB`;
 }
@@ -33,7 +58,7 @@ function formatDate(value: string) {
 
 export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   const [records, setRecords] = useState<KnowledgeDocument[]>([]);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('技術文件');
   const [language, setLanguage] = useState<'zh-TW' | 'en' | 'mixed'>('zh-TW');
@@ -74,22 +99,29 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  function chooseFile(next: File | null) {
-    setFile(next);
-    if (next && !title) setTitle(next.name.replace(/\.pdf$/i, ''));
+  function chooseFiles(next: FileList | null) {
+    const selected = Array.from(next ?? []).slice(0, MAX_BATCH_FILES);
+    setFiles(selected);
+    setTitle(selected.length === 1 ? displayTitleFromFilename(selected[0].name) : '');
   }
 
   async function upload(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file) {
-      setError('請選擇 PDF 檔案。');
+    if (!files.length) {
+      setError('請選擇要上傳的檔案。');
       return;
     }
-    if (file.type && file.type !== 'application/pdf') {
-      setError('目前僅接受 PDF 檔案。');
+    if (files.length > MAX_BATCH_FILES) {
+      setError(`一次最多可上傳 ${MAX_BATCH_FILES} 份檔案。`);
       return;
     }
-    if (file.size > 52_428_800) {
+    const unsupported = files.find((file) => !documentMimeType(file.name));
+    if (unsupported) {
+      setError(`「${unsupported.name}」不是支援的格式。請使用 PDF、DOCX 或 PPTX。`);
+      return;
+    }
+    const oversized = files.find((file) => file.size > 52_428_800);
+    if (oversized) {
       setError('目前單一檔案上限為 50 MB。');
       return;
     }
@@ -97,36 +129,56 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
     setError('');
     setNotice('');
     try {
-      const response = await fetch('/api/admin/documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/pdf',
-          'X-Document-Original-Filename': encodeURIComponent(file.name),
-          'X-Document-Title': encodeURIComponent(title),
-          'X-Document-Category': encodeURIComponent(category),
-          'X-Document-Language': language,
-          'X-Document-Access': access,
-          'X-Document-File-Size': String(file.size),
-        },
-        body: file,
-      });
-      if (redirectAdminUnauthorized(response, window.location)) return;
-      if (!response.ok) throw new Error('upload_failed');
-      const payload = (await response.json()) as {
-        record: { status: 'approved' | 'excluded' | 'failed' };
-      };
-      setFile(null);
-      setTitle('');
-      setNotice(
-        payload.record.status === 'approved'
-          ? access === 'public'
-            ? '文件已完成自動擷取與安全檢查，現在可供網站助理回答。'
-            : '文件已完成自動擷取與安全檢查，保留為內部知識。'
-          : payload.record.status === 'excluded'
-            ? '文件已安全保存；因權限或敏感內容規則，不會提供網站助理使用。'
-            : '文件已保存，但無法讀取文字。請改上傳可搜尋文字的 PDF。',
-      );
-      await load();
+      let approved = 0;
+      let excluded = 0;
+      let failed = 0;
+      const retryFiles: File[] = [];
+      for (const file of files) {
+        try {
+          const mimeType = documentMimeType(file.name);
+          if (!mimeType) throw new Error('unsupported_document_type');
+          const response = await fetch('/api/admin/documents', {
+            method: 'POST',
+            headers: {
+              'Content-Type': mimeType,
+              'X-Document-Original-Filename': encodeURIComponent(file.name),
+              'X-Document-Title': encodeURIComponent(
+                files.length === 1 ? title : displayTitleFromFilename(file.name),
+              ),
+              'X-Document-Category': encodeURIComponent(category),
+              'X-Document-Language': language,
+              'X-Document-Access': access,
+              'X-Document-File-Size': String(file.size),
+            },
+            body: file,
+          });
+          if (redirectAdminUnauthorized(response, window.location)) return;
+          if (!response.ok) throw new Error('upload_failed');
+          const payload = (await response.json()) as {
+            record: { status: 'approved' | 'excluded' | 'failed' };
+          };
+          if (payload.record.status === 'approved') approved += 1;
+          else if (payload.record.status === 'excluded') excluded += 1;
+          else failed += 1;
+        } catch {
+          retryFiles.push(file);
+        }
+      }
+      const completed = approved + excluded + failed;
+      setFiles(retryFiles);
+      setTitle(retryFiles.length === 1 ? displayTitleFromFilename(retryFiles[0].name) : '');
+      if (completed) {
+        const readyText =
+          access === 'public'
+            ? `${approved} 份已加入網站助理`
+            : `${approved} 份已完成內部處理`;
+        setNotice(
+          `已保存並自動處理 ${completed} 份檔案：${readyText}、${excluded} 份依權限或安全規則排除、${failed} 份無法擷取文字。`,
+        );
+        await load();
+      }
+      if (retryFiles.length)
+        setError(`${retryFiles.length} 份檔案尚未保存，請確認網路後重新上傳。`);
     } catch {
       setError('文件尚未保存。請確認檔案與網路後再試。');
     } finally {
@@ -137,7 +189,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   async function remove(record: KnowledgeDocument) {
     if (
       !window.confirm(
-        `確定要永久刪除「${record.displayTitle}」嗎？原始 PDF 與後續擷取資料都會一併移除。`,
+        `確定要永久刪除「${record.displayTitle}」嗎？原始檔案與後續擷取資料都會一併移除。`,
       )
     )
       return;
@@ -261,7 +313,7 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
     }
     if (record.assistantStatus === 'failed')
       return record.extractionError === 'no_extractable_text'
-        ? '找不到可擷取文字（需要 OCR）'
+        ? '找不到可擷取文字（請確認檔案含文字，或轉為 DOCX／PPTX）'
         : '自動處理失敗';
     return '等待系統自動處理';
   }
@@ -305,39 +357,50 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
         {error ? <p className={styles.error}>{error}</p> : null}
         {notice ? <p className={styles.notice}>{notice}</p> : null}
         <article className={styles.panel}>
-          <h2>上傳 PDF 文件</h2>
+          <h2>上傳技術文件</h2>
           <p className={styles.panelIntro}>
-            上傳後，系統會自動擷取文字、略過敏感段落，並將可用內容直接加入網站助理。原始 PDF 僅保存在私有文件庫。
+            可一次選擇多份 PDF、Word 或 PowerPoint。每份檔案會自動擷取文字、略過敏感段落，並將可用內容直接加入網站助理；原始檔案僅保存在私有文件庫。
           </p>
           <form className={styles.editorForm} onSubmit={upload}>
             <div className={styles.documentUploadField}>
-              <span id="document-file-label">PDF 檔案</span>
+              <span id="document-file-label">選擇檔案</span>
               <input
                 id="document-file"
                 className={styles.fileInput}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept="application/pdf,.pdf,.docx,.pptx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                multiple
                 aria-describedby="document-file-help"
-                onChange={(event) =>
-                  chooseFile(event.currentTarget.files?.[0] ?? null)
-                }
+                onChange={(event) => chooseFiles(event.currentTarget.files)}
               />
               <label className={styles.filePicker} htmlFor="document-file">
-                選擇 PDF 檔案
+                選擇多份檔案
               </label>
-              <p className={styles.fileName} id="document-file-help">
-                {file
-                  ? `已選擇：${file.name}（${formatSize(file.size)}）`
-                  : '尚未選擇檔案（僅限 PDF，單一檔案最大 50 MB）'}
-              </p>
+              <div className={styles.fileName} id="document-file-help">
+                {files.length ? (
+                  <>
+                    <span>已選擇 {files.length} 份檔案：</span>
+                    <ul className={styles.selectedFiles}>
+                      {files.map((file) => (
+                        <li key={`${file.name}-${file.lastModified}`}>
+                          {file.name}（{formatSize(file.size)}）
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  '支援 PDF、Word（DOCX）與 PowerPoint（PPTX）；一次最多 20 份，每份最大 50 MB。舊式 DOC／PPT 請先另存為 DOCX／PPTX。'
+                )}
+              </div>
             </div>
             <label>
-              顯示名稱
+              顯示名稱{files.length > 1 ? '（多檔時自動使用各檔名）' : ''}
               <input
                 value={title}
                 onChange={(event) => setTitle(event.currentTarget.value)}
                 maxLength={255}
-                required
+                required={files.length === 1}
+                disabled={files.length > 1}
               />
             </label>
             <label>
@@ -379,7 +442,11 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
             </label>
             <div className={styles.editorActions}>
               <button type="submit" disabled={saving}>
-                {saving ? '上傳並自動處理中…' : '上傳並自動加入助理'}
+                {saving
+                  ? '上傳並自動處理中…'
+                  : files.length > 1
+                    ? `上傳 ${files.length} 份並自動加入助理`
+                    : '上傳並自動加入助理'}
               </button>
             </div>
           </form>
@@ -403,7 +470,8 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                     <small>
                       {record.originalFilename}
                       <br />
-                      {record.category} · {formatSize(record.fileSize)} ·{' '}
+                      {documentFormatLabel(record.mimeType)} · {record.category} ·{' '}
+                      {formatSize(record.fileSize)} ·{' '}
                       {formatDate(record.updatedAt)}
                     </small>
                   </div>

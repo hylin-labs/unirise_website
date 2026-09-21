@@ -1,6 +1,6 @@
-import { extractText, getDocumentProxy } from 'unpdf';
 import type { AdminIdentity } from './admin-auth';
 import { chunkExtractedPages } from './document-extraction';
+import { extractDocumentPages } from './office-document-extraction';
 import {
   completeDocumentExtraction,
   excludeDocumentAfterSafetyScreening,
@@ -34,10 +34,11 @@ export async function automaticallyProcessDocument(
 
   const stored = await runtime.DOCUMENTS.get(document.storage_key);
   if (!stored) throw new Error('document_file_not_found');
-  const pdf = await getDocumentProxy(new Uint8Array(await stored.arrayBuffer()));
-  const extracted = await extractText(pdf, { mergePages: false });
-  const pages = Array.isArray(extracted.text) ? extracted.text : [extracted.text];
-  const { chunks, characterCount } = chunkExtractedPages(pages);
+  const extracted = await extractDocumentPages(
+    await stored.arrayBuffer(),
+    document.mime_type,
+  );
+  const { chunks, characterCount } = chunkExtractedPages(extracted.pages);
   if (!chunks.length) throw new Error('no_extractable_text');
 
   const screening = screenDocumentChunksForAssistant(chunks);
@@ -45,7 +46,7 @@ export async function automaticallyProcessDocument(
     await excludeDocumentAfterSafetyScreening(
       runtime.DB,
       document,
-      extracted.totalPages,
+      extracted.pageCount,
       characterCount,
       screening.excludedChunkCount,
       actor,
@@ -53,7 +54,7 @@ export async function automaticallyProcessDocument(
     return {
       documentId: document.id,
       status: 'excluded',
-      pageCount: extracted.totalPages,
+      pageCount: extracted.pageCount,
       chunkCount: 0,
       excludedChunkCount: screening.excludedChunkCount,
       characterCount,
@@ -64,7 +65,7 @@ export async function automaticallyProcessDocument(
     runtime.DB,
     document,
     screening.safeChunks,
-    extracted.totalPages,
+    extracted.pageCount,
     characterCount,
     actor,
     { autoApprove: true, excludedChunkCount: screening.excludedChunkCount },
@@ -72,7 +73,7 @@ export async function automaticallyProcessDocument(
   return {
     documentId: document.id,
     status: 'approved',
-    pageCount: extracted.totalPages,
+    pageCount: extracted.pageCount,
     chunkCount: screening.safeChunks.length,
     excludedChunkCount: screening.excludedChunkCount,
     characterCount,

@@ -3,6 +3,11 @@ import type { AdminIdentity } from './admin-auth';
 import { extractDeterministicDocumentFacts } from './document-facts';
 
 export const documentLanguages = ['zh-TW', 'en', 'mixed'] as const;
+export const documentMimeTypes = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+] as const;
 export const documentAccessLevels = [
   'public',
   'internal',
@@ -42,6 +47,7 @@ export const documentFactOrigins = [
 ] as const;
 
 export type DocumentLanguage = (typeof documentLanguages)[number];
+export type DocumentMimeType = (typeof documentMimeTypes)[number];
 export type DocumentAccessLevel = (typeof documentAccessLevels)[number];
 export type DocumentAssistantStatus =
   (typeof documentAssistantStatuses)[number];
@@ -58,7 +64,7 @@ export type KnowledgeDocument = {
   sourceLanguage: DocumentLanguage;
   accessLevel: DocumentAccessLevel;
   assistantStatus: DocumentAssistantStatus;
-  mimeType: 'application/pdf';
+  mimeType: DocumentMimeType;
   fileSize: number;
   extractionPageCount: number | null;
   extractionCharacters: number | null;
@@ -120,7 +126,7 @@ type DocumentRow = {
   source_language: DocumentLanguage;
   access_level: DocumentAccessLevel;
   assistant_status: DocumentAssistantStatus;
-  mime_type: 'application/pdf';
+  mime_type: DocumentMimeType;
   file_size: number;
   extraction_page_count: number | null;
   extraction_characters: number | null;
@@ -163,6 +169,7 @@ type ExtractionDocument = {
   source_language: DocumentLanguage;
   access_level: DocumentAccessLevel;
   assistant_status: DocumentAssistantStatus;
+  mime_type: DocumentMimeType;
 };
 
 type DocumentReviewChunkRow = {
@@ -209,6 +216,18 @@ function allowedValue<T extends readonly string[]>(
 function optionalText(value: unknown, field: string, maximum: number) {
   if (value === undefined || value === null || value === '') return null;
   return requiredText(value, field, maximum);
+}
+
+export function documentMimeTypeForFilename(
+  filename: string,
+): DocumentMimeType | null {
+  const normalized = filename.toLowerCase();
+  if (normalized.endsWith('.pdf')) return 'application/pdf';
+  if (normalized.endsWith('.docx'))
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (normalized.endsWith('.pptx'))
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  return null;
 }
 
 function pageNumber(value: unknown, field: string) {
@@ -332,9 +351,9 @@ export function createDocumentInput(value: {
     'originalFilename',
     255,
   );
-  if (!originalFilename.toLowerCase().endsWith('.pdf')) {
-    throw new DocumentValidationError('only PDF files are allowed');
-  }
+  const mimeType = documentMimeTypeForFilename(originalFilename);
+  if (!mimeType)
+    throw new DocumentValidationError('only_pdf_docx_pptx_files_are_allowed');
   const fileSize = value.fileSize;
   if (
     typeof fileSize !== 'number' ||
@@ -360,6 +379,7 @@ export function createDocumentInput(value: {
       'accessLevel',
       documentAccessLevels,
     ),
+    mimeType,
     fileSize,
   };
 }
@@ -456,7 +476,7 @@ export async function createStoredDocument(
         input.sourceLanguage,
         input.accessLevel,
         input.accessLevel === 'confidential' ? 'excluded' : 'pending',
-        'application/pdf',
+        input.mimeType,
         input.fileSize,
         r2Etag,
         actor.id,
@@ -764,7 +784,7 @@ export async function findDocumentForExtraction(db: D1Database, id: string) {
     throw new DocumentValidationError('id is required');
   return db
     .prepare(
-        `SELECT id, storage_key, display_title, source_language, access_level, assistant_status
+        `SELECT id, storage_key, display_title, source_language, access_level, assistant_status, mime_type
        FROM ${uniriseSchema.documents} WHERE id = ? LIMIT 1`,
     )
     .bind(id)
