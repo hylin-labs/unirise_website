@@ -18,6 +18,7 @@ config.d1_databases = [
     binding: 'DB',
     database_name: required('CLOUDFLARE_D1_DATABASE_NAME'),
     database_id: required('CLOUDFLARE_D1_DATABASE_ID'),
+    migrations_dir: '../../drizzle',
   },
 ];
 config.r2_buckets = [
