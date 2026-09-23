@@ -25,7 +25,7 @@ describe('translation manager interactions', () => {
     vi.useFakeTimers();
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     database = sqliteD1();
-    await seedLegacyContent(database.d1);
+    await seedLegacyContent(database.d1, { seedEnglishTranslations: false });
     const handler = createTranslationsAdminHandler(
       database.d1,
       async () => actor,

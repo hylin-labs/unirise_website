@@ -209,7 +209,7 @@ function factIntentScore(source: SiteKnowledgeSource, query: string) {
     [/處理量|throughput/i, ['throughput_rate']],
     [/觸控螢幕|觸碰螢幕|touch\s*screen/i, ['touch_screen_size']],
     [/供電|電源|power supply/i, ['power_supply']],
-    [/保存多久|保存.*資料|data retention|how long.*data/i, ['data_retention']],
+    [/保存多久|保留多久|(?:保存|保留).*資料|data retention|how long.*data/i, ['data_retention']],
     [/量測|測量|measure/i, ['measurement_purpose']],
     [/用途|適用|intended use|field of application/i, ['intended_use']],
     [/交付內容|包含哪些|標準配備|scope of delivery|included/i, ['scope_of_delivery']],
@@ -477,11 +477,12 @@ export function answerFromStructuredFacts(
       `依已核准的技術文件，供電規格為 ${localizedValue(supply)}。`,
       `According to the approved technical document, the power supply is ${supply}.`,
     );
+  const retentionSource = sources.find((item) => factPredicate(item) === 'data_retention');
   const retention = matchingFact(sources, 'data_retention');
-  if (/保存多久|保存.*資料|data retention|how long.*data/i.test(question) && retention)
+  if (/保存多久|保留多久|(?:保存|保留).*資料|data retention|how long.*data/i.test(question) && retention)
     return answer(
-      `依已核准的技術文件，裝置會保存最近 ${localizedValue(retention)} 的量測資料。`,
-      `According to the approved technical document, the device retains measurement data for the last ${retention}.`,
+      `依已核准的技術文件，裝置會保存最近 ${localizedValue(retention)} 的量測資料${/ring buffer/i.test(retentionSource?.content ?? '') ? '，並儲存在裝置記憶體的環形緩衝區' : ''}。`,
+      `According to the approved technical document, the device retains measurement data for the last ${retention}${/ring buffer/i.test(retentionSource?.content ?? '') ? ' in a ring buffer in device memory' : ''}.`,
     );
   const purpose = matchingFact(sources, 'measurement_purpose');
   if (

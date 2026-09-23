@@ -5,6 +5,8 @@ import {
   createProjectDraft,
   projectPassportHref,
   projectWorkspaceStorageKey,
+  projectDraftsFromStorage,
+  type ProjectDraft,
   type ProjectCapacity,
   type ProjectGoal,
   type ProjectMaterial,
@@ -18,12 +20,13 @@ type Recommendation = {
   title: string;
   reason: string;
   catalogHref: string;
+  configuration?: string[];
 };
 
 const copy = {
   'zh-TW': {
     title: '快速選型',
-    description: '用三個問題，協助您先找到最值得討論的方案。',
+    description: '依序回答四個簡短問題，協助您先找到最值得討論的方案。',
     product: '您的產品類型',
     goal: '主要需求',
     capacity: '預估產能規模',
@@ -45,6 +48,9 @@ const copy = {
     specification: '下載規格摘要',
     passport: '建立方案護照連結',
     service: '既有設備服務支援',
+    savedProjects: '已儲存的專案草稿',
+    openDraft: '開啟',
+    removeDraft: '刪除',
     materials: {
       fresh: '新鮮蔬果／農產',
       protein: '肉品、海鮮或蛋白質食品',
@@ -74,7 +80,7 @@ const copy = {
   },
   en: {
     title: 'Solution Finder',
-    description: 'Answer three questions to identify the best solution to discuss first.',
+    description: 'Answer four short questions, one at a time, to identify the best solution to discuss first.',
     product: 'Your product type',
     goal: 'Primary requirement',
     capacity: 'Expected capacity',
@@ -96,6 +102,9 @@ const copy = {
     specification: 'Download specification brief',
     passport: 'Create solution passport link',
     service: 'Existing equipment support',
+    savedProjects: 'Saved project drafts',
+    openDraft: 'Open',
+    removeDraft: 'Remove',
     materials: {
       fresh: 'Fresh produce and agricultural products',
       protein: 'Meat, seafood, or protein products',
@@ -125,7 +134,7 @@ const copy = {
   },
 } as const;
 
-function recommendationFor(locale: Locale, goal: ProjectGoal): Recommendation {
+function recommendationFor(locale: Locale, selection: ProjectSelection): Recommendation {
   const zh = locale === 'zh-TW';
   const recommendations: Record<ProjectGoal, Recommendation> = {
     sorting: {
@@ -171,7 +180,19 @@ function recommendationFor(locale: Locale, goal: ProjectGoal): Recommendation {
       catalogHref: '/catalog?type=industry&id=7',
     },
   };
-  return recommendations[goal];
+  const materialFocus = zh
+    ? `產品範圍：${copy['zh-TW'].materials[selection.material]}`
+    : `Product scope: ${copy.en.materials[selection.material]}`;
+  const capacityFocus = zh
+    ? `產能討論：${copy['zh-TW'].capacities[selection.capacity]}`
+    : `Capacity discussion: ${copy.en.capacities[selection.capacity]}`;
+  const priorityFocus = zh
+    ? `優先目標：${copy['zh-TW'].priorities[selection.priority]}`
+    : `Primary priority: ${copy.en.priorities[selection.priority]}`;
+  return {
+    ...recommendations[selection.goal],
+    configuration: [materialFocus, capacityFocus, priorityFocus],
+  };
 }
 
 export function SolutionFinder({ locale }: { locale: Locale }) {
@@ -183,10 +204,21 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
   const [projectName, setProjectName] = useState('');
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [drafts, setDrafts] = useState<ProjectDraft[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return projectDraftsFromStorage(
+        JSON.parse(window.localStorage.getItem(projectWorkspaceStorageKey) ?? '[]'),
+      );
+    } catch {
+      return [];
+    }
+  });
+  const completedSteps = [material, goal, capacity, priority].filter(Boolean).length;
   const recommendation = useMemo(
     () =>
       material && goal && capacity && priority
-        ? recommendationFor(locale, goal)
+        ? recommendationFor(locale, { material, goal, capacity, priority })
         : null,
     [capacity, goal, locale, material, priority],
   );
@@ -200,20 +232,39 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
   const saveBrief = () => {
     if (!recommendation || !summary || !material || !goal || !capacity || !priority) return;
     try {
-      const previous = JSON.parse(
-        window.localStorage.getItem(projectWorkspaceStorageKey) ?? '[]',
-      ) as unknown[];
       const selection: ProjectSelection = { material, goal, capacity, priority };
       const draft = createProjectDraft(selection, recommendation.title, projectName);
+      const previous = projectDraftsFromStorage(
+        JSON.parse(window.localStorage.getItem(projectWorkspaceStorageKey) ?? '[]'),
+      );
+      const next = [draft, ...previous].slice(0, 20);
       window.localStorage.setItem(
         projectWorkspaceStorageKey,
-        JSON.stringify([draft, ...previous].slice(0, 20)),
+        JSON.stringify(next),
       );
+      setDrafts(next);
       setSaved(true);
     } catch {
       // Storage can be unavailable in a private browsing session. The enquiry
       // path remains available without saving anything.
     }
+  };
+  const openDraft = (draft: ProjectDraft) => {
+    setMaterial(draft.material);
+    setGoal(draft.goal);
+    setCapacity(draft.capacity);
+    setPriority(draft.priority);
+    setProjectName(draft.name);
+    setSaved(true);
+  };
+  const removeDraft = (id: string) => {
+    const next = drafts.filter((draft) => draft.id !== id);
+    try {
+      window.localStorage.setItem(projectWorkspaceStorageKey, JSON.stringify(next));
+    } catch {
+      return;
+    }
+    setDrafts(next);
   };
   const passportHref =
     recommendation && material && goal && capacity && priority
@@ -234,6 +285,7 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
       `${locale === 'en' ? 'Project' : '專案'}: ${projectName.trim() || recommendation.title}`,
       `${locale === 'en' ? 'Recommended discussion' : '建議優先討論'}: ${recommendation.title}`,
       `${locale === 'en' ? 'Initial configuration' : '初步設定'}: ${summary}`,
+      ...(recommendation.configuration ?? []),
       '',
       locale === 'en'
         ? 'This is a preliminary discussion brief, not a formal quotation or final technical specification.'
@@ -255,6 +307,13 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
       // Copying is optional; visitors can still use the enquiry link.
     }
   };
+  const restartFrom = (step: number) => {
+    if (step <= 0) setMaterial('');
+    if (step <= 1) setGoal('');
+    if (step <= 2) setCapacity('');
+    if (step <= 3) setPriority('');
+    setSaved(false);
+  };
 
   return (
     <section
@@ -269,14 +328,27 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
           <p>{text.description}</p>
         </div>
       </div>
+      <ol className="solution-finder-progress" aria-label={text.title}>
+        {[text.product, text.goal, text.capacity, text.priority].map((label, index) => (
+          <li
+            className={index < completedSteps ? 'complete' : index === completedSteps ? 'active' : ''}
+            key={label}
+          >
+            <span>{index + 1}</span>
+            {label}
+          </li>
+        ))}
+      </ol>
       <div className="solution-finder-fields">
-        <label>
+        {!material ? (
+          <label className="solution-finder-question">
           {text.product}
           <select
             value={material}
-            onChange={(event) =>
-              setMaterial(event.currentTarget.value as ProjectMaterial | '')
-            }
+            onChange={(event) => {
+              setMaterial(event.currentTarget.value as ProjectMaterial | '');
+              restartFrom(1);
+            }}
           >
             <option value="">{text.select}</option>
             {Object.entries(text.materials).map(([value, label]) => (
@@ -285,14 +357,22 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               </option>
             ))}
           </select>
-        </label>
-        <label>
+          </label>
+        ) : (
+          <button className="solution-finder-answer" type="button" onClick={() => restartFrom(0)}>
+            <span>{text.product}</span>
+            {text.materials[material]}
+          </button>
+        )}
+        {material && !goal && (
+          <label className="solution-finder-question">
           {text.goal}
           <select
             value={goal}
-            onChange={(event) =>
-              setGoal(event.currentTarget.value as ProjectGoal | '')
-            }
+            onChange={(event) => {
+              setGoal(event.currentTarget.value as ProjectGoal | '');
+              restartFrom(2);
+            }}
           >
             <option value="">{text.select}</option>
             {Object.entries(text.goals).map(([value, label]) => (
@@ -301,12 +381,23 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               </option>
             ))}
           </select>
-        </label>
-        <label>
+          </label>
+        )}
+        {goal && (
+          <button className="solution-finder-answer" type="button" onClick={() => restartFrom(1)}>
+            <span>{text.goal}</span>
+            {text.goals[goal]}
+          </button>
+        )}
+        {goal && !capacity && (
+          <label className="solution-finder-question">
           {text.capacity}
           <select
             value={capacity}
-            onChange={(event) => setCapacity(event.currentTarget.value as ProjectCapacity | '')}
+            onChange={(event) => {
+              setCapacity(event.currentTarget.value as ProjectCapacity | '');
+              restartFrom(3);
+            }}
           >
             <option value="">{text.select}</option>
             {Object.entries(text.capacities).map(([value, label]) => (
@@ -315,8 +406,16 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               </option>
             ))}
           </select>
-        </label>
-        <label>
+          </label>
+        )}
+        {capacity && (
+          <button className="solution-finder-answer" type="button" onClick={() => restartFrom(2)}>
+            <span>{text.capacity}</span>
+            {text.capacities[capacity]}
+          </button>
+        )}
+        {capacity && !priority && (
+          <label className="solution-finder-question">
           {text.priority}
           <select
             value={priority}
@@ -329,7 +428,14 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
               </option>
             ))}
           </select>
-        </label>
+          </label>
+        )}
+        {priority && (
+          <button className="solution-finder-answer" type="button" onClick={() => restartFrom(3)}>
+            <span>{text.priority}</span>
+            {text.priorities[priority]}
+          </button>
+        )}
       </div>
       {recommendation && (
         <div className="solution-finder-result" aria-live="polite">
@@ -339,6 +445,9 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
           <small>
             {text.summary}：{summary}
           </small>
+          <ul className="project-configuration">
+            {(recommendation.configuration ?? []).map((item) => <li key={item}>{item}</li>)}
+          </ul>
           <div>
             <a href={recommendation.catalogHref}>{text.details}</a>
             <a className="original-inquiry-button" href={inquiryHref}>
@@ -378,6 +487,18 @@ export function SolutionFinder({ locale }: { locale: Locale }) {
             </div>
           </aside>
         </div>
+      )}
+      {drafts.length > 0 && (
+        <aside className="project-draft-list" aria-label={text.savedProjects}>
+          <strong>{text.savedProjects}</strong>
+          {drafts.map((draft) => (
+            <div key={draft.id}>
+              <span>{draft.name}</span>
+              <button type="button" onClick={() => openDraft(draft)}>{text.openDraft}</button>
+              <button type="button" onClick={() => removeDraft(draft.id)}>{text.removeDraft}</button>
+            </div>
+          ))}
+        </aside>
       )}
     </section>
   );

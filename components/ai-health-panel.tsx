@@ -104,10 +104,9 @@ export function AiHealthPanel({ identity }: { identity: AdminIdentity }) {
           </div>
         </header>
         <article className={styles.panel}>
-          <h2>Groq 模型連線檢查</h2>
+          <h2>公開網站主機的 Groq 模型連線檢查</h2>
           <p className={styles.panelIntro}>
-            此檢查只會傳送極小的測試訊息，不會傳送客戶提問、技術文件或 API
-            金鑰。
+            此檢查只會驗證公開網站主機能否連到 Groq，並只傳送極小的測試訊息；不會傳送客戶提問、技術文件或 API 金鑰。本機開發環境可使用 API 金鑰，並不代表公開網站主機已能連線。
           </p>
           {loading ? <p className={styles.loading}>正在檢查模型連線…</p> : null}
           {error ? <p className={styles.error}>{error}</p> : null}

@@ -4,7 +4,6 @@ import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { LanguageSwitcher } from '../components/language-switcher';
 import { SupportChat } from '../components/support-chat';
-import { VisitorCounter } from '../components/visitor-counter';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
 import { initialPublicContent } from '../lib/public-content';
@@ -258,6 +257,10 @@ export function OriginalFooter({
   locale = 'zh-TW',
   chrome = initialPublicContent.chrome,
 }: ChromeProps) {
+  const copyright = chrome.text.copyright.replace(
+    /\b20\d{2}\b/,
+    String(new Date().getFullYear()),
+  );
   return (
     <>
       <footer className="original-footer" id="contact">
@@ -343,8 +346,7 @@ export function OriginalFooter({
         </div>
         <div className="original-copyright">
           <div className="original-container">
-            {chrome.text.copyright}
-            <VisitorCounter locale={locale} />
+            {copyright}
           </div>
         </div>
       </footer>

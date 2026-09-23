@@ -7,7 +7,14 @@ import {
   legacyNewsPosts,
 } from './seed-content-data';
 
-export async function seedLegacyContent(db: D1Database): Promise<void> {
+export type SeedLegacyContentOptions = {
+  seedEnglishTranslations?: boolean;
+};
+
+export async function seedLegacyContent(
+  db: D1Database,
+  { seedEnglishTranslations = true }: SeedLegacyContentOptions = {},
+): Promise<void> {
   const publishedAt = new Date().toISOString();
 
   for (const id of PUBLIC_CONTENT_IDS) {
@@ -17,9 +24,11 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
       )
       .bind(id, JSON.stringify(initialPublicContent[id]), 1, 'published')
       .run();
-    await seedEnglishTranslation(db, 'public_content', id, {
-      ...initialPublicContent[id],
-    });
+    if (seedEnglishTranslations) {
+      await seedEnglishTranslation(db, 'public_content', id, {
+        ...initialPublicContent[id],
+      });
+    }
   }
 
   for (const email of ['hungyu@gmail.com']) {
@@ -57,19 +66,21 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
         publishedAt,
       )
       .run();
-    await seedEnglishTranslation(db, 'news', post.id, {
-      kind: 'news',
-      text: {
-        title: post.title,
-        lead: post.lead,
-        highlights: post.highlights,
-      },
-      literals: {
-        legacyId: post.id,
-        imageUrl: post.image,
-        videoUrl: post.video ?? null,
-      },
-    });
+    if (seedEnglishTranslations) {
+      await seedEnglishTranslation(db, 'news', post.id, {
+        kind: 'news',
+        text: {
+          title: post.title,
+          lead: post.lead,
+          highlights: post.highlights,
+        },
+        literals: {
+          legacyId: post.id,
+          imageUrl: post.image,
+          videoUrl: post.video ?? null,
+        },
+      });
+    }
   }
 
   for (const download of legacyDownloads) {
@@ -79,11 +90,13 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
       )
       .bind(download.id, download.id, download.title, 'published', publishedAt)
       .run();
-    await seedEnglishTranslation(db, 'download', download.id, {
-      kind: 'download',
-      text: { title: download.title },
-      literals: { legacyId: download.id },
-    });
+    if (seedEnglishTranslations) {
+      await seedEnglishTranslation(db, 'download', download.id, {
+        kind: 'download',
+        text: { title: download.title },
+        literals: { legacyId: download.id },
+      });
+    }
   }
 
   for (const item of legacyKnowledge) {
@@ -101,11 +114,13 @@ export async function seedLegacyContent(db: D1Database): Promise<void> {
         publishedAt,
       )
       .run();
-    await seedEnglishTranslation(db, 'knowledge', item.id, {
-      kind: 'knowledge',
-      text: { title: item.title, body: item.content, tags: [] },
-      literals: { href: item.href },
-    });
+    if (seedEnglishTranslations) {
+      await seedEnglishTranslation(db, 'knowledge', item.id, {
+        kind: 'knowledge',
+        text: { title: item.title, body: item.content, tags: [] },
+        literals: { href: item.href },
+      });
+    }
   }
   await refreshInquiryCopy(db);
 }

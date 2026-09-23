@@ -52,8 +52,6 @@ export function createProjectDraft(
 
 export function projectPassportHref(locale: Locale, draft: ProjectDraft) {
   const params = new URLSearchParams({
-    id: draft.id,
-    name: draft.name,
     recommendation: draft.recommendation,
     material: draft.material,
     goal: draft.goal,
@@ -61,6 +59,31 @@ export function projectPassportHref(locale: Locale, draft: ProjectDraft) {
     priority: draft.priority,
   });
   return `${locale === 'en' ? '/en/project' : '/project'}?${params.toString()}`;
+}
+
+export function projectDraftsFromStorage(value: unknown): ProjectDraft[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const candidate = item as Record<string, unknown>;
+    const selection = validProjectSelection({
+      material: typeof candidate.material === 'string' ? candidate.material : '',
+      goal: typeof candidate.goal === 'string' ? candidate.goal : '',
+      capacity: typeof candidate.capacity === 'string' ? candidate.capacity : '',
+      priority: typeof candidate.priority === 'string' ? candidate.priority : '',
+    });
+    const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
+    const name = typeof candidate.name === 'string' ? candidate.name.trim().slice(0, 80) : '';
+    const recommendation = typeof candidate.recommendation === 'string'
+      ? candidate.recommendation.trim().slice(0, 160)
+      : '';
+    const createdAt = typeof candidate.createdAt === 'string' ? candidate.createdAt : '';
+    const updatedAt = typeof candidate.updatedAt === 'string' ? candidate.updatedAt : '';
+    if (!selection || !id || id.length > 160 || !recommendation || !createdAt || !updatedAt || seen.has(id)) return [];
+    seen.add(id);
+    return [{ ...selection, id, name: name || recommendation, recommendation, createdAt, updatedAt }];
+  }).slice(0, 20);
 }
 
 export function validProjectSelection(

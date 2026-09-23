@@ -148,8 +148,8 @@ export const knowledgeEvaluationCases: KnowledgeEvaluationCase[] = [
     id: 'promix-data-retention-zh',
     category: 'operation',
     locale: 'zh-TW',
-    question: 'Promix Visco P 裝置內可保存多久的量測資料？',
-    expectedAnswerTerms: ['12'],
+    question: 'Promix 會保留多久的量測資料？資料保存方式是什麼？',
+    expectedAnswerTerms: ['12', '環形緩衝區'],
     expectedCitation: {
       documentTitle: 'Operating Manual Promix Visco P_Rev4.1',
       page: 12,

@@ -23,12 +23,9 @@ describe('solution finder', () => {
 
   it('turns a completed selection into a relevant solution and enquiry link', async () => {
     await act(async () => root.render(<SolutionFinder locale="en" />));
-    const selects = Array.from(
-      container.querySelectorAll('select'),
-    ) as unknown as HTMLSelectElement[];
     const values = ['packaged', 'inspection', 'high', 'quality'];
-    for (const [index, value] of values.entries()) {
-      const select = selects[index]!;
+    for (const value of values) {
+      const select = container.querySelector('select') as HTMLSelectElement;
       select.value = value;
       await act(async () =>
         select.dispatchEvent(new Event('change', { bubbles: true })),
@@ -49,6 +46,9 @@ describe('solution finder', () => {
         ?.getAttribute('href'),
     ).toContain('&brief=');
     expect(container.textContent).toContain('Project Brief');
+    expect(container.textContent).toContain('Product scope: Packaged, canned, or bottled food');
+    expect(container.textContent).toContain('Capacity discussion: High-capacity or multi-line production');
+    expect(container.textContent).toContain('Primary priority: Quality and consistency');
     expect(container.textContent).toContain('Save project draft');
     expect(container.textContent).toContain('Download specification brief');
     expect(container.textContent).toContain('Create solution passport link');

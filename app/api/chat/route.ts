@@ -15,6 +15,7 @@ import {
   RequestTooLargeError,
   readLimitedRequestBody,
 } from '../../../lib/request-body';
+import { GROQ_CHAT_ENDPOINT } from '../../../lib/groq-endpoint';
 
 const MAX_MESSAGE_LENGTH = 700;
 const MAX_BODY_BYTES = 12_000;
@@ -463,7 +464,7 @@ export function createChatHandler({
           );
           try {
             return await fetcher(
-              'https://api.groq.com/openai/v1/chat/completions',
+              GROQ_CHAT_ENDPOINT,
               {
                 method: 'POST',
                 headers: {

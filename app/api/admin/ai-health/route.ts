@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { requireAdmin } from '../../../../lib/admin-auth';
+import { GROQ_CHAT_ENDPOINT } from '../../../../lib/groq-endpoint';
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const PRIMARY_MODEL = 'qwen/qwen3.8-27b';
 const FALLBACK_MODEL = 'openai/gpt-oss-120b';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -30,7 +30,7 @@ async function checkModel(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetcher(GROQ_ENDPOINT, {
+    const response = await fetcher(GROQ_CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${groqApiKey}`,

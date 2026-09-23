@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createProjectDraft,
+  projectDraftsFromStorage,
   projectPassportHref,
   validProjectSelection,
 } from '../lib/project-workspace';
@@ -24,8 +25,14 @@ describe('project workspace foundation', () => {
     expect(draft.name).toBe('Line 2 review');
     expect(href).toContain('/en/project?');
     expect(href).toContain('material=packaged');
+    expect(href).not.toContain('name=');
     expect(href).not.toContain('email');
     expect(href).not.toContain('phone');
+  });
+
+  it('restores only valid local drafts and removes duplicate identifiers', () => {
+    const draft = createProjectDraft(selection, 'XAVIS Food X-ray Inspection', 'Line 2');
+    expect(projectDraftsFromStorage([draft, draft, { id: 'bad' }])).toEqual([draft]);
   });
 
   it('rejects incomplete or unsupported configuration values', () => {

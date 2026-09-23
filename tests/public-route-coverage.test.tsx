@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers';
 import { PublicHomeRoute } from '../app/page';
 import { initialPublicContent } from '../lib/public-content';
 import { legacyDownloads, legacyNewsPosts } from '../lib/seed-content-data';
+import { englishSeedPayload } from '../lib/english-seed';
 import { localizedPath, alternateLocalePath } from '../lib/localized-route';
 import {
   getLocalizedContent,
@@ -206,6 +207,9 @@ describe('complete bilingual public route matrix', () => {
   });
 
   it('supports every numeric catalog ID and legacy item/group query precedence', async () => {
+    const englishCatalog = englishSeedPayload(
+      structuredClone(english.catalog),
+    );
     for (const type of ['industry', 'brand'] as const) {
       for (const [id, title] of Object.entries(
         initialPublicContent.catalog.text[`${type}Titles`],
@@ -218,7 +222,9 @@ describe('complete bilingual public route matrix', () => {
           );
           const html = await renderRoute(path);
           const expected =
-            locale === 'en' ? english.catalog.text[`${type}Titles`][id] : title;
+            locale === 'en'
+              ? englishCatalog.text[`${type}Titles`][id]
+              : title;
           expect(html).toContain(
             renderToStaticMarkup(<strong>{expected}</strong>),
           );
@@ -230,6 +236,18 @@ describe('complete bilingual public route matrix', () => {
     );
     expect(html).toContain('<h2>Custom item</h2>');
     expect(html).toContain('Custom group');
+  });
+
+  it('offers a direct catalogue explorer when no catalogue type is selected', async () => {
+    const traditionalChinese = await renderRoute('/catalog');
+    expect(traditionalChinese).toContain('依產業需求探索');
+    expect(traditionalChinese).toContain('href="/catalog?type=industry&amp;id=1"');
+    expect(traditionalChinese).toContain('href="/catalog?type=brand&amp;id=89"');
+
+    const englishHtml = await renderRoute('/en/catalog');
+    expect(englishHtml).toContain('Browse by industry');
+    expect(englishHtml).toContain('href="/en/catalog?type=industry&amp;id=1"');
+    expect(englishHtml).toContain('href="/en/catalog?type=brand&amp;id=89"');
   });
 
   it('keeps news media and localized detail, back and inquiry links', async () => {

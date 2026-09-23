@@ -4,8 +4,8 @@ import {
   type CanonicalSource,
   type TranslationPayload,
 } from './translation-types';
+import { GROQ_CHAT_ENDPOINT } from './groq-endpoint';
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-20b';
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_TOKENS = 2_000;
@@ -232,7 +232,7 @@ export async function translateWithGroq(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let upstream: Response;
   try {
-    upstream = await fetcher(GROQ_ENDPOINT, {
+    upstream = await fetcher(GROQ_CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${groqApiKey}`,

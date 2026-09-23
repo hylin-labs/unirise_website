@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { sqliteD1 } from './helpers/sqlite-d1';
 import { seedLegacyContent } from '../lib/seed-content';
+import { englishSeedPayload } from '../lib/english-seed';
 import * as repository from '../lib/translation-repository';
 import {
   createAdminSessionCookie,
@@ -42,7 +43,7 @@ const echoGroq: typeof fetch = async (_url, init) => {
 async function setup() {
   const { d1, sqlite } = sqliteD1();
   closers.push(() => sqlite.close());
-  await seedLegacyContent(d1);
+  await seedLegacyContent(d1, { seedEnglishTranslations: false });
   const source = (await repository.getCanonicalSource(d1, 'news', '3944'))!;
   const { createTranslationsAdminHandler } =
     await import('../app/api/admin/translations/route');
@@ -336,7 +337,7 @@ describe('translation administration', () => {
     }
     expect(
       (await repository.getLocalizedContent(d1, 'news', '3944', 'en'))?.payload,
-    ).toEqual(payload);
+    ).toEqual(englishSeedPayload(payload));
     const actions = sqlite
       .prepare('SELECT action FROM admin_audit_log')
       .all()

@@ -82,7 +82,7 @@ function database() {
 async function seeded() {
   const repository = await import('../lib/translation-repository');
   const { d1 } = database();
-  await seedLegacyContent(d1);
+  await seedLegacyContent(d1, { seedEnglishTranslations: false });
   const source = (await repository.getCanonicalSource(d1, 'news', '3944'))!;
   return { d1, repository, source };
 }

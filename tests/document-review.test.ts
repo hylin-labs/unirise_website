@@ -151,7 +151,14 @@ describe('document review workflow', () => {
 
   it('only supplies approved public document segments to the website assistant', async () => {
     const d1 = await reviewedFixture();
-    expect(await retrieveSiteKnowledge(d1, 'zh-TW', 'X-ray')).toEqual([]);
+    const initialKnowledge = await retrieveSiteKnowledge(d1, 'zh-TW', 'X-ray');
+    expect(initialKnowledge).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining('document:document-review-fixture:chunk:'),
+        }),
+      ]),
+    );
 
     const review = await getDocumentReview(d1, 'document-review-fixture');
     await reviewDocumentChunk(
@@ -173,13 +180,15 @@ describe('document review workflow', () => {
       admin,
     );
 
-    await expect(retrieveSiteKnowledge(d1, 'zh-TW', 'X-ray')).resolves.toEqual([
-      expect.objectContaining({
-        id: expect.stringContaining('document:document-review-fixture:chunk:'),
-        title: '技術文件：技術手冊（第 1 頁）',
-        content: 'X-ray inspection detects foreign material.',
-      }),
-    ]);
+    await expect(retrieveSiteKnowledge(d1, 'zh-TW', 'X-ray')).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining('document:document-review-fixture:chunk:'),
+          title: '技術文件：技術手冊（第 1 頁）',
+          content: 'X-ray inspection detects foreign material.',
+        }),
+      ]),
+    );
   });
 
   it('can automatically approve screened document chunks for the public assistant', async () => {

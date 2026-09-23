@@ -22,6 +22,21 @@ const heroImages = [
   ],
 ] as const;
 
+const journeyCopy = {
+  'zh-TW': {
+    title: '從需求開始，找到適合產線的方案',
+    description: '先用快速選型整理需求，再帶著結果與專員討論。',
+    finder: '依需求找方案',
+    inquiry: '直接詢價',
+  },
+  en: {
+    title: 'Start with your line requirements',
+    description: 'Use the quick finder to prepare a focused discussion, or send an enquiry directly.',
+    finder: 'Find a solution',
+    inquiry: 'Send an enquiry',
+  },
+} as const;
+
 type PublicHomeProps = {
   locale: Locale;
   home: HomePayload;
@@ -41,6 +56,7 @@ export function PublicHome({
   news,
   pathname,
 }: PublicHomeProps) {
+  const journey = journeyCopy[locale];
   const [slide, setSlide] = useState(0);
   const [agencyStart, setAgencyStart] = useState(0);
   const [agencyVisible, setAgencyVisible] = useState(4);
@@ -153,6 +169,22 @@ export function PublicHome({
         </a>
       </section>
       <div id="scroll">
+        <section className="original-home-entry" aria-label={journey.title}>
+          <div className="original-container">
+            <div>
+              <span>{journey.title}</span>
+              <p>{journey.description}</p>
+            </div>
+            <div className="original-home-entry-actions">
+              <a href={localizedPath(locale, '/inquiry', '', '#solution-finder')}>
+                {journey.finder}
+              </a>
+              <a href={localizedPath(locale, '/inquiry')}>
+                {journey.inquiry}
+              </a>
+            </div>
+          </div>
+        </section>
         <section className="original-about">
           <div className="original-about-inner">
             <article>

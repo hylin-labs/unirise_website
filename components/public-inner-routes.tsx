@@ -119,6 +119,23 @@ const catalogImage = (type: string, id: string) => {
   return '/reference/original/index_009.jpg';
 };
 
+const catalogBrowseCopy = {
+  'zh-TW': {
+    title: '快速找到適合的產品方向',
+    description: '可先依您的產業情境或代理品牌瀏覽；選定主題後，再將結果帶入詢價。',
+    industry: '依產業需求探索',
+    brand: '依代理品牌探索',
+    open: '查看方案',
+  },
+  en: {
+    title: 'Find the right product direction',
+    description: 'Start by browsing your industry or an agency brand, then bring the selected topic into an enquiry.',
+    industry: 'Browse by industry',
+    brand: 'Browse by agency brand',
+    open: 'View solutions',
+  },
+} as const;
+
 export async function PublicCatalogRoute({
   locale,
   searchParams,
@@ -132,6 +149,64 @@ export async function PublicCatalogRoute({
   const { text, literals } = catalog.payload;
   const type = first(params.type) || '';
   const id = first(params.id) || '';
+  const browse = catalogBrowseCopy[locale];
+  const legacyGroup = first(params.group);
+  const legacyItem = first(params.item);
+  if (!type && !legacyGroup && !legacyItem) {
+    const groups = [
+      {
+        heading: browse.industry,
+        entries: chrome.literals.industryMenu
+          .map(({ id }) => [id, text.industryTitles[id]] as const)
+          .filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+        type: 'industry' as const,
+      },
+      {
+        heading: browse.brand,
+        entries: chrome.literals.brandMenu
+          .map(({ id }) => [id, text.brandTitles[id]] as const)
+          .filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+        type: 'brand' as const,
+      },
+    ];
+    return (
+      <PublicInnerPage
+        locale={locale}
+        path="/catalog"
+        chrome={chrome}
+        title={text.title}
+        eyebrow={text.industryEyebrow}
+        breadcrumbs={[{ label: text.title }]}
+      >
+        <section className="catalog-explorer" aria-label={text.title}>
+          <header>
+            <h2>{browse.title}</h2>
+            <p>{browse.description}</p>
+          </header>
+          {groups.map((group) => (
+            <section key={group.type} aria-labelledby={`catalog-${group.type}`}>
+              <h3 id={`catalog-${group.type}`}>{group.heading}</h3>
+              <div className="catalog-explorer-grid">
+                {group.entries.map(([entryId, entryTitle]) => (
+                  <a
+                    href={localizedPath(
+                      locale,
+                      '/catalog',
+                      `?type=${group.type}&id=${entryId}`,
+                    )}
+                    key={`${group.type}-${entryId}`}
+                  >
+                    <strong>{entryTitle}</strong>
+                    <span>{browse.open} →</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          ))}
+        </section>
+      </PublicInnerPage>
+    );
+  }
   const titles =
     type === 'industry'
       ? text.industryTitles
@@ -165,7 +240,7 @@ export async function PublicCatalogRoute({
       breadcrumbs={[
         {
           label: type === 'industry' ? text.industry : text.brand,
-          href: localizedPath(locale, '/catalog', '?type=brand&id=89'),
+          href: localizedPath(locale, '/catalog'),
         },
         { label: title },
       ]}
@@ -224,6 +299,18 @@ const newsCopy = {
   },
 };
 
+function publicationLabel(locale: Locale, publishedAt: string | null) {
+  if (!publishedAt) return '';
+  const date = new Date(publishedAt);
+  if (Number.isNaN(date.valueOf())) return '';
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-TW', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+    year: 'numeric',
+  }).format(date);
+}
+
 export async function PublicNewsRoute({
   locale,
   searchParams,
@@ -246,6 +333,7 @@ export async function PublicNewsRoute({
   const postImageUrl = post
     ? (youtubeThumbnailUrl(post.imageUrl) ?? stablePublicImage(post.imageUrl))
     : '';
+  const postPublishedAt = post ? publicationLabel(locale, post.publishedAt) : '';
   return (
     <PublicInnerPage
       locale={locale}
@@ -263,7 +351,10 @@ export async function PublicNewsRoute({
             alt={post.title}
             decoding="async"
           />
-          <time>{copy.label} · {post.legacyId}</time>
+          <time>
+            {copy.label}
+            {postPublishedAt ? ` · ${postPublishedAt}` : ''}
+          </time>
           <h2>{post.title}</h2>
           <p className="article-lead">{post.lead}</p>
           <ul>
@@ -325,7 +416,12 @@ export async function PublicNewsRoute({
                   decoding="async"
                 />
               </a>
-              <time>{copy.label}</time>
+              <time>
+                {copy.label}
+                {publicationLabel(locale, item.publishedAt)
+                  ? ` · ${publicationLabel(locale, item.publishedAt)}`
+                  : ''}
+              </time>
               <h2>{item.title}</h2>
               <p>{item.lead}</p>
               <a
@@ -375,6 +471,8 @@ const searchCopy = {
     news: '最新消息',
     download: '下載資料',
     downloadSummary: '可透過詢價系統索取最新產品資料。',
+    suggestions: '常用搜尋',
+    suggestionTerms: ['食品分選', 'XAVIS', '包裝', '回收再生'],
   },
   en: {
     eyebrow: 'Search',
@@ -388,6 +486,8 @@ const searchCopy = {
     news: 'News',
     download: 'Downloads',
     downloadSummary: 'Use the inquiry system to request the latest product information.',
+    suggestions: 'Popular searches',
+    suggestionTerms: ['food sorting', 'XAVIS', 'packaging', 'recycling'],
   },
 };
 
@@ -504,6 +604,21 @@ export async function PublicSearchRoute({
             </div>
           </form>
         </search>
+        {!query ? (
+          <div className="search-suggestions" aria-label={copy.suggestions}>
+            <strong>{copy.suggestions}</strong>
+            <div>
+              {copy.suggestionTerms.map((term) => (
+                <a
+                  href={localizedPath(locale, '/search', `?q=${encodeURIComponent(term)}`)}
+                  key={term}
+                >
+                  {term}
+                </a>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {!query ? <p className="search-empty">{copy.prompt}</p> : null}
         {query ? (
           <p className="search-summary">

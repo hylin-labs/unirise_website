@@ -3,6 +3,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { seedLegacyContent } from '../lib/seed-content';
+import { englishSeedPayload } from '../lib/english-seed';
 import { ensureInitialContent } from '../lib/runtime-initialization';
 import { saveNews } from '../lib/content-repository';
 
@@ -107,7 +108,7 @@ async function repository() {
 async function seeded() {
   const api = await repository();
   const db = database();
-  await seedLegacyContent(db.d1);
+  await seedLegacyContent(db.d1, { seedEnglishTranslations: false });
   const source = (await api.getCanonicalSource(db.d1, 'news', '3944'))!;
   const payload = structuredClone(source.payload);
   if (payload.kind !== 'news') throw new Error('expected news');
@@ -156,7 +157,7 @@ describe('bilingual persistence', () => {
     if (edited.kind !== 'home') throw new Error('expected home');
     edited.text.heading = '管理員編輯';
     await api.updateCanonicalSource(d1, { ...home, payload: edited }, actor);
-    await seedLegacyContent(d1);
+    await seedLegacyContent(d1, { seedEnglishTranslations: false });
     expect(
       (await api.getCanonicalSource(d1, 'public_content', 'home'))?.payload,
     ).toEqual(edited);
@@ -174,7 +175,12 @@ describe('bilingual persistence', () => {
     );
     expect(
       await api.getLocalizedContent(d1, 'news', '3944', 'en'),
-    ).toMatchObject({ locale: 'en', missing: false, outdated: false, payload });
+    ).toMatchObject({
+      locale: 'en',
+      missing: false,
+      outdated: false,
+      payload: englishSeedPayload(payload),
+    });
     await api.setTranslationPublication(d1, 'news', '3944', 'draft', actor);
     expect(
       await api.getLocalizedContent(d1, 'news', '3944', 'en'),
@@ -524,9 +530,12 @@ describe('bilingual persistence', () => {
     expect(
       await api.getLocalizedContent(d1, 'news', '3944', 'en'),
     ).toMatchObject({
-      missing: true,
-      translation: null,
-      payload: { literals: { imageUrl: '/changed.jpg' } },
+      missing: false,
+      translation: expect.objectContaining({ origin: 'ai' }),
+      payload: englishSeedPayload({
+        ...payload,
+        literals: { ...payload.literals, imageUrl: '/changed.jpg' },
+      }),
     });
   });
 

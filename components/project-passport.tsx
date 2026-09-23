@@ -1,6 +1,7 @@
 'use client';
 import type { Locale } from '../lib/locales';
 import { validProjectSelection } from '../lib/project-workspace';
+import { ProjectPassportQr } from './project-passport-qr';
 
 const labels = {
   'zh-TW': {
@@ -92,7 +93,6 @@ export function ProjectPassport({
     priority: params.get('priority') ?? '',
   });
   const recommendation = (params.get('recommendation') ?? '').slice(0, 160);
-  const name = (params.get('name') ?? '').slice(0, 80);
   if (!selection || !recommendation)
     return <p className="project-passport-empty">{text.unavailable}</p>;
   const detail = [
@@ -103,13 +103,14 @@ export function ProjectPassport({
   ].join(' · ');
   const inquiry = `${locale === 'en' ? '/en/inquiry' : '/inquiry'}?product=${encodeURIComponent(recommendation)}&brief=${encodeURIComponent(detail)}`;
   const service = `${locale === 'en' ? '/en/inquiry' : '/inquiry'}?service=1&product=${encodeURIComponent(recommendation)}&brief=${encodeURIComponent(detail)}`;
+  const passportHref = `${locale === 'en' ? '/en/project' : '/project'}?${new URLSearchParams({ recommendation, material: selection.material, goal: selection.goal, capacity: selection.capacity, priority: selection.priority }).toString()}`;
   return (
     <section className="project-passport" aria-labelledby="project-passport-title">
       <span>{text.eyebrow}</span>
       <h2 id="project-passport-title">{text.title}</h2>
       <p>{text.description}</p>
       <dl>
-        <div><dt>{text.project}</dt><dd>{name || recommendation}</dd></div>
+        <div><dt>{text.project}</dt><dd>{recommendation}</dd></div>
         <div><dt>{text.recommendation}</dt><dd>{recommendation}</dd></div>
         <div><dt>{text.selection}</dt><dd>{detail}</dd></div>
       </dl>
@@ -118,6 +119,7 @@ export function ProjectPassport({
         <a href={service}>{text.service}</a>
       </div>
       <small>{text.note}</small>
+      <ProjectPassportQr locale={locale} href={passportHref} />
     </section>
   );
 }
