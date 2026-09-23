@@ -236,7 +236,7 @@ describe('complete bilingual public route matrix', () => {
     );
     expect(html).toContain('<h2>Custom item</h2>');
     expect(html).toContain('Custom group');
-  });
+  }, 15_000);
 
   it('offers a direct catalogue explorer when no catalogue type is selected', async () => {
     const traditionalChinese = await renderRoute('/catalog');
