@@ -145,6 +145,14 @@ export function extractDeterministicDocumentFacts(
     addMatch(
       facts,
       normalizedSource,
+      'pressure_display_units',
+      /display\s+can\s+indicate\s+(?:the\s+)?pressure\s+in\s+(bar\s*,\s*PSI\s+or\s+MPa)/i,
+      (match) => match[1],
+      null,
+    );
+    addMatch(
+      facts,
+      normalizedSource,
       'throughput_rate',
       /5\.1\.\s+Throughput\s+rate\s+kg\/h\s+(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/i,
       (match) => `${match[1]}–${match[2]}`,
@@ -189,7 +197,8 @@ export function extractDeterministicDocumentFacts(
       normalizedSource,
       'intended_use',
       /device\s+is\s+suitable\s+for\s+determining\s+the\s+flow\s+behavior\s+of\s+plastic\s+melts\s+in\s+production,\s+in\s+the\s+laboratory\s+and\s+for\s+quality\s+assurance\s+purposes/i,
-      () => 'production, laboratory, and quality-assurance evaluation of plastic-melt flow behaviour',
+      () =>
+        'production, laboratory, and quality-assurance evaluation of plastic-melt flow behaviour',
       null,
       'operation',
     );
@@ -198,7 +207,8 @@ export function extractDeterministicDocumentFacts(
       normalizedSource,
       'scope_of_delivery',
       /scope\s+of\s+delivery\s+includes\s+the\s+measuring\s+module\s+with\s+the\s+necessary\s+sensors,\s+an\s+evaluation\s+unit\s+for\s+processing\s+the\s+signals\s+and\s+transferring\s+them\s+to\s+a\s+15"\s+touch\s+screen\s+panel\s+PC\s+with\s+the\s+corresponding\s+software/i,
-      () => 'measuring module with sensors; evaluation unit; 15-inch touch-screen panel PC with software',
+      () =>
+        'measuring module with sensors; evaluation unit; 15-inch touch-screen panel PC with software',
       null,
       'specification',
     );
@@ -243,7 +253,8 @@ export function extractDeterministicDocumentFacts(
       normalizedSource,
       'report_export',
       /export\s+the\s+reports\s+to\s+a\s+storage\s+medium.*?USB\s+stick.*?reports\s+are\s+output\s+in\s+PDF\s+format\s+and\s+saved\s+monthly/i,
-      () => 'export reports to a USB storage device in PDF format; reports are saved monthly',
+      () =>
+        'export reports to a USB storage device in PDF format; reports are saved monthly',
       null,
       'operation',
     );
@@ -270,7 +281,8 @@ export function extractDeterministicDocumentFacts(
       normalizedSource,
       'fieldbus_interfaces',
       /following\s+interfaces\s+are\s+available:\s*•?\s*Serial\s+Modbus\s+RTU\s*•\s*EtherNet\/IP\s*•\s*PROFINET\s+Device\s*•\s*PowerLINK\s*•\s*SERCOS\s+III\s*•\s*CANopen\s*•\s*DeviceNet\s*•\s*PROFIBUS\s+DP/i,
-      () => 'Serial Modbus RTU, EtherNet/IP, PROFINET Device, PowerLINK, SERCOS III, CANopen, DeviceNet, and PROFIBUS DP',
+      () =>
+        'Serial Modbus RTU, EtherNet/IP, PROFINET Device, PowerLINK, SERCOS III, CANopen, DeviceNet, and PROFIBUS DP',
       null,
       'specification',
     );
@@ -278,7 +290,7 @@ export function extractDeterministicDocumentFacts(
       facts,
       normalizedSource,
       'maintenance_power_isolation',
-      /before\s+(?:starting\s+)?maintenance\s+work\s+(?:the\s+)?entire\s+line\s+(?:has\s+to\s+be|must\s+be)\s+shut\s+down\s+and\s+disconnected\s+from\s+power/i,
+      /(?:(?:before|during)\s+(?:starting\s+)?maintenance\s+work\s*,?\s*(?:the\s+)?entire\s+line\s+(?:has\s+to\s+be|must\s+be)\s+shut\s+down\s+and\s+disconnected\s+from\s+(?:the\s+)?power(?:\s+supply)?|(?:the\s+)?entire\s+line\s+(?:has\s+to\s+be|must\s+be)\s+shut\s+down\s+and\s+disconnected\s+from\s+(?:the\s+)?power(?:\s+supply)?\s+(?:before|during)\s+(?:starting\s+)?maintenance\s+work)/i,
       () => 'shut down the entire line and disconnect it from power',
       null,
       'operation',

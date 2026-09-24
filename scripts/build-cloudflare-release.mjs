@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 
 function required(name) {
   const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} must be set for a Cloudflare release build.`);
+  if (!value)
+    throw new Error(`${name} must be set for a Cloudflare release build.`);
   return value;
 }
 
@@ -25,6 +26,12 @@ config.r2_buckets = [
   {
     binding: 'DOCUMENTS',
     bucket_name: required('CLOUDFLARE_R2_BUCKET_NAME'),
+  },
+];
+config.services = [
+  {
+    binding: 'GROQ_PROXY',
+    service: 'unirise-groq-proxy',
   },
 ];
 

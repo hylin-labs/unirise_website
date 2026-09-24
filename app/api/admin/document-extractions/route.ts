@@ -1,6 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { requireAdmin } from '../../../../lib/admin-auth';
-import { automaticallyProcessDocument } from '../../../../lib/document-processing';
+import {
+  automaticallyProcessDocument,
+  processBrowserExtractedDocument,
+} from '../../../../lib/document-processing';
 import {
   DocumentValidationError,
   failDocumentExtraction,
@@ -8,6 +11,8 @@ import {
 } from '../../../../lib/document-repository';
 
 type DocumentRuntime = { DB: D1Database; DOCUMENTS?: R2Bucket };
+const MAX_BROWSER_EXTRACTED_PAGES = 500;
+const MAX_BROWSER_EXTRACTED_CHARACTERS = 1_000_000;
 
 function json(error: string, status: number) {
   return Response.json(
@@ -34,20 +39,43 @@ export function createDocumentExtractionHandler(
 
     let document: Awaited<ReturnType<typeof findDocumentForExtraction>> = null;
     try {
-      const payload = (await request.json()) as { id?: unknown };
+      const payload = (await request.json()) as {
+        id?: unknown;
+        pages?: unknown;
+      };
       const id = typeof payload.id === 'string' ? payload.id : '';
       document = await findDocumentForExtraction(runtime.DB, id);
       if (!document) return json('document_not_found', 404);
 
-      const result = await automaticallyProcessDocument(
-        { DB: runtime.DB, DOCUMENTS: runtime.DOCUMENTS },
-        id,
-        actor,
-      );
-      return Response.json(
-        result,
-        { headers: { 'Cache-Control': 'no-store' } },
-      );
+      const pages = payload.pages;
+      if (Array.isArray(pages)) {
+        if (
+          !pages.length ||
+          pages.length > MAX_BROWSER_EXTRACTED_PAGES ||
+          pages.some((page) => typeof page !== 'string') ||
+          pages.reduce(
+            (total, page) =>
+              total + (typeof page === 'string' ? page.length : 0),
+            0,
+          ) > MAX_BROWSER_EXTRACTED_CHARACTERS
+        )
+          return json('browser_extracted_pages_invalid', 400);
+      }
+      const result = Array.isArray(pages)
+        ? await processBrowserExtractedDocument(
+            { DB: runtime.DB },
+            id,
+            pages,
+            actor,
+          )
+        : await automaticallyProcessDocument(
+            { DB: runtime.DB, DOCUMENTS: runtime.DOCUMENTS },
+            id,
+            actor,
+          );
+      return Response.json(result, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
     } catch (error) {
       if (document) {
         const latest = await findDocumentForExtraction(runtime.DB, document.id);

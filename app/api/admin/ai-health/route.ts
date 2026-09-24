@@ -1,12 +1,20 @@
 import { env } from 'cloudflare:workers';
 import { requireAdmin } from '../../../../lib/admin-auth';
 import { GROQ_CHAT_ENDPOINT } from '../../../../lib/groq-endpoint';
+import {
+  requestGroqCompletion,
+  type GroqProxyBinding,
+} from '../../../../lib/groq-proxy';
 
 const PRIMARY_MODEL = 'qwen/qwen3.8-27b';
 const FALLBACK_MODEL = 'openai/gpt-oss-120b';
 const REQUEST_TIMEOUT_MS = 10_000;
 
-type Runtime = { DB: D1Database; GROQ_API_KEY?: string };
+type Runtime = {
+  DB: D1Database;
+  GROQ_API_KEY?: string;
+  GROQ_PROXY?: GroqProxyBinding;
+};
 type Authenticate = typeof requireAdmin;
 type Fetcher = typeof fetch;
 type CheckResult = {
@@ -26,24 +34,30 @@ async function checkModel(
   model: string,
   groqApiKey: string,
   fetcher: Fetcher,
+  groqProxy?: GroqProxyBinding,
 ): Promise<CheckResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetcher(GROQ_CHAT_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${groqApiKey}`,
-        'Content-Type': 'application/json',
+    const response = await requestGroqCompletion(
+      GROQ_CHAT_ENDPOINT,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 4,
+          messages: [{ role: 'user', content: 'Reply with OK.' }],
+        }),
       },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        max_tokens: 4,
-        messages: [{ role: 'user', content: 'Reply with OK.' }],
-      }),
-    });
+      fetcher,
+      groqProxy,
+    );
     if (response.ok) return { model, status: 'healthy' };
     return { model, status: 'http_error', httpStatus: response.status };
   } catch (error) {
@@ -75,6 +89,7 @@ export function createAiHealthHandler(
       PRIMARY_MODEL,
       runtime.GROQ_API_KEY,
       fetcher,
+      runtime.GROQ_PROXY,
     );
     if (primary.status === 'healthy')
       return json({ provider: 'groq', status: 'healthy', primary });
@@ -85,6 +100,7 @@ export function createAiHealthHandler(
       FALLBACK_MODEL,
       runtime.GROQ_API_KEY,
       fetcher,
+      runtime.GROQ_PROXY,
     );
     const status =
       fallback.status === 'healthy' ? 'fallback_healthy' : 'unavailable';

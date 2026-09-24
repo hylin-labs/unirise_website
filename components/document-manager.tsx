@@ -4,6 +4,7 @@ import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
 import type { AdminIdentity } from '../lib/admin-auth';
 import type {
   DocumentReview,
+  DocumentMimeType,
   KnowledgeDocument,
 } from '../lib/document-repository';
 import { redirectAdminUnauthorized } from '../lib/admin-content';
@@ -19,7 +20,7 @@ const accessLabels = {
 
 const MAX_BATCH_FILES = 20;
 
-function documentMimeType(filename: string) {
+function documentMimeType(filename: string): DocumentMimeType | null {
   if (/\.pdf$/i.test(filename)) return 'application/pdf';
   if (/\.docx$/i.test(filename))
     return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -102,7 +103,62 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
   function chooseFiles(next: FileList | null) {
     const selected = Array.from(next ?? []).slice(0, MAX_BATCH_FILES);
     setFiles(selected);
-    setTitle(selected.length === 1 ? displayTitleFromFilename(selected[0].name) : '');
+    setTitle(
+      selected.length === 1 ? displayTitleFromFilename(selected[0].name) : '',
+    );
+  }
+
+  async function storeBrowserExtraction(
+    documentId: string,
+    source: Blob,
+    mimeType: DocumentMimeType,
+  ) {
+    const { extractDocumentPages } =
+      await import('../lib/office-document-extraction');
+    const extracted = await extractDocumentPages(
+      await source.arrayBuffer(),
+      mimeType,
+    );
+    const response = await fetch('/api/admin/document-extractions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: documentId, pages: extracted.pages }),
+    });
+    if (redirectAdminUnauthorized(response, window.location))
+      throw new Error('unauthorized');
+    if (!response.ok) throw new Error('browser_extraction_failed');
+    return (await response.json()) as {
+      status: 'approved' | 'excluded';
+    };
+  }
+
+  async function retryBrowserExtraction(record: KnowledgeDocument) {
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(
+        `/api/admin/document-files?id=${encodeURIComponent(record.id)}`,
+        { cache: 'no-store' },
+      );
+      if (redirectAdminUnauthorized(response, window.location)) return;
+      if (!response.ok) throw new Error('document_file_load_failed');
+      const result = await storeBrowserExtraction(
+        record.id,
+        await response.blob(),
+        record.mimeType,
+      );
+      setNotice(
+        result.status === 'approved'
+          ? '文件已重新擷取並加入網站助理。'
+          : '文件已完成安全檢查，未加入網站助理。',
+      );
+      await load();
+    } catch {
+      setError('無法重新擷取文件，請稍後再試。');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function upload(event: SyntheticEvent<HTMLFormElement>) {
@@ -117,7 +173,9 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
     }
     const unsupported = files.find((file) => !documentMimeType(file.name));
     if (unsupported) {
-      setError(`「${unsupported.name}」不是支援的格式。請使用 PDF、DOCX 或 PPTX。`);
+      setError(
+        `「${unsupported.name}」不是支援的格式。請使用 PDF、DOCX 或 PPTX。`,
+      );
       return;
     }
     const oversized = files.find((file) => file.size > 52_428_800);
@@ -134,8 +192,13 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
       let failed = 0;
       const retryFiles: File[] = [];
       for (const file of files) {
+        let uploadedRecord: {
+          id: string;
+          status: 'pending' | 'excluded';
+        } | null = null;
+        let mimeType: DocumentMimeType | null = null;
         try {
-          const mimeType = documentMimeType(file.name);
+          mimeType = documentMimeType(file.name);
           if (!mimeType) throw new Error('unsupported_document_type');
           const response = await fetch('/api/admin/documents', {
             method: 'POST',
@@ -143,30 +206,55 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
               'Content-Type': mimeType,
               'X-Document-Original-Filename': encodeURIComponent(file.name),
               'X-Document-Title': encodeURIComponent(
-                files.length === 1 ? title : displayTitleFromFilename(file.name),
+                files.length === 1
+                  ? title
+                  : displayTitleFromFilename(file.name),
               ),
               'X-Document-Category': encodeURIComponent(category),
               'X-Document-Language': language,
               'X-Document-Access': access,
               'X-Document-File-Size': String(file.size),
+              'X-Document-Processing-Mode': 'browser',
             },
             body: file,
           });
           if (redirectAdminUnauthorized(response, window.location)) return;
           if (!response.ok) throw new Error('upload_failed');
           const payload = (await response.json()) as {
-            record: { status: 'approved' | 'excluded' | 'failed' };
+            record: { id: string; status: 'pending' | 'excluded' };
           };
-          if (payload.record.status === 'approved') approved += 1;
-          else if (payload.record.status === 'excluded') excluded += 1;
-          else failed += 1;
+          uploadedRecord = payload.record;
         } catch {
           retryFiles.push(file);
+          continue;
+        }
+        if (!uploadedRecord || !mimeType) {
+          retryFiles.push(file);
+          continue;
+        }
+        if (uploadedRecord.status === 'excluded') {
+          excluded += 1;
+          continue;
+        }
+        try {
+          const result = await storeBrowserExtraction(
+            uploadedRecord.id,
+            file,
+            mimeType,
+          );
+          if (result.status === 'approved') approved += 1;
+          else excluded += 1;
+        } catch {
+          failed += 1;
         }
       }
       const completed = approved + excluded + failed;
       setFiles(retryFiles);
-      setTitle(retryFiles.length === 1 ? displayTitleFromFilename(retryFiles[0].name) : '');
+      setTitle(
+        retryFiles.length === 1
+          ? displayTitleFromFilename(retryFiles[0].name)
+          : '',
+      );
       if (completed) {
         const readyText =
           access === 'public'
@@ -302,20 +390,18 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
 
   function assistantStatusLabel(record: KnowledgeDocument) {
     if (record.assistantStatus === 'excluded') return '已安全排除';
-    if (record.assistantStatus === 'processing') return '系統自動處理中…';
+    if (record.assistantStatus === 'processing') return '等待重新擷取';
     if (record.assistantStatus === 'review_required') {
       return `舊文件待處理${record.extractionPageCount ? `・${record.extractionPageCount} 頁` : ''}`;
     }
     if (record.assistantStatus === 'approved') {
-      return record.accessLevel === 'public'
-        ? '已加入助理'
-        : '已完成內部處理';
+      return record.accessLevel === 'public' ? '已加入助理' : '已完成內部處理';
     }
     if (record.assistantStatus === 'failed')
       return record.extractionError === 'no_extractable_text'
         ? '找不到可擷取文字（請確認檔案含文字，或轉為 DOCX／PPTX）'
         : '自動處理失敗';
-    return '等待系統自動處理';
+    return '等待文字擷取';
   }
 
   return (
@@ -359,7 +445,8 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
         <article className={styles.panel}>
           <h2>上傳技術文件</h2>
           <p className={styles.panelIntro}>
-            可一次選擇多份 PDF、Word 或 PowerPoint。每份檔案會自動擷取文字、略過敏感段落，並將可用內容直接加入網站助理；原始檔案僅保存在私有文件庫。
+            可一次選擇多份 PDF、Word 或
+            PowerPoint。每份檔案會自動擷取文字、略過敏感段落，並將可用內容直接加入網站助理；原始檔案僅保存在私有文件庫。
           </p>
           <form className={styles.editorForm} onSubmit={upload}>
             <div className={styles.documentUploadField}>
@@ -470,8 +557,8 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                     <small>
                       {record.originalFilename}
                       <br />
-                      {documentFormatLabel(record.mimeType)} · {record.category} ·{' '}
-                      {formatSize(record.fileSize)} ·{' '}
+                      {documentFormatLabel(record.mimeType)} · {record.category}{' '}
+                      · {formatSize(record.fileSize)} ·{' '}
                       {formatDate(record.updatedAt)}
                     </small>
                   </div>
@@ -486,6 +573,17 @@ export function DocumentManager({ identity }: { identity: AdminIdentity }) {
                   </span>
                   <div className={styles.rowActions}>
                     <span>{assistantStatusLabel(record)}</span>
+                    {['pending', 'processing', 'failed', 'approved'].includes(
+                      record.assistantStatus,
+                    ) ? (
+                      <button
+                        type="button"
+                        onClick={() => void retryBrowserExtraction(record)}
+                        disabled={saving}
+                      >
+                        重新擷取
+                      </button>
+                    ) : null}
                     {record.extractionPageCount ? (
                       <button
                         type="button"

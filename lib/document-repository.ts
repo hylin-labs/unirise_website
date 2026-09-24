@@ -784,7 +784,7 @@ export async function findDocumentForExtraction(db: D1Database, id: string) {
     throw new DocumentValidationError('id is required');
   return db
     .prepare(
-        `SELECT id, storage_key, display_title, source_language, access_level, assistant_status, mime_type
+      `SELECT id, storage_key, display_title, source_language, access_level, assistant_status, mime_type
        FROM ${uniriseSchema.documents} WHERE id = ? LIMIT 1`,
     )
     .bind(id)
@@ -1005,10 +1005,29 @@ export async function deleteDocument(
 ) {
   if (typeof id !== 'string' || !id.trim())
     throw new DocumentValidationError('id is required');
-  const [removed] = await db.batch([
+  // Delete dependent rows explicitly. This keeps document removal reliable on
+  // remote D1 databases even when a historical migration did not apply every
+  // foreign-key cascade consistently.
+  const results = await db.batch([
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.documentFacts} WHERE document_id = ?`,
+      )
+      .bind(id),
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.documentChunks} WHERE document_id = ?`,
+      )
+      .bind(id),
+    db
+      .prepare(
+        `DELETE FROM ${uniriseSchema.documentVersions} WHERE document_id = ?`,
+      )
+      .bind(id),
     db.prepare(`DELETE FROM ${uniriseSchema.documents} WHERE id = ?`).bind(id),
     auditStatement(db, actor, 'document.deleted', id, {}),
   ]);
+  const removed = results[3];
   if (removed.meta.changes !== 1)
     throw new DocumentValidationError('document not found');
 }

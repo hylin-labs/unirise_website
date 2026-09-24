@@ -47,6 +47,29 @@ describe('AI provider health endpoint', () => {
     expect(payload).not.toContain('server-only-key');
   });
 
+  it('uses the internal proxy binding when it is available', async () => {
+    const proxy = {
+      fetch: vi.fn(async () =>
+        Response.json({ choices: [{ message: { content: 'OK' } }] }),
+      ),
+    };
+    const externalFetcher = vi.fn();
+    const handler = createAiHealthHandler(
+      {
+        DB: {} as D1Database,
+        GROQ_API_KEY: 'server-only-key',
+        GROQ_PROXY: proxy,
+      },
+      authenticated,
+      externalFetcher,
+    );
+
+    const response = await handler(request());
+    expect(response.status).toBe(200);
+    expect(proxy.fetch).toHaveBeenCalledOnce();
+    expect(externalFetcher).not.toHaveBeenCalled();
+  });
+
   it('checks GPT-OSS when the primary model is rejected', async () => {
     const fetcher = vi
       .fn()

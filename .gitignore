@@ -40,3 +40,6 @@ next-env.d.ts
 /.worktrees/
 /.superpowers/sdd/
 .gstack/
+
+# TypeScript incremental-build cache
+*.tsbuildinfo

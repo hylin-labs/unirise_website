@@ -16,6 +16,10 @@ import {
   readLimitedRequestBody,
 } from '../../../lib/request-body';
 import { GROQ_CHAT_ENDPOINT } from '../../../lib/groq-endpoint';
+import {
+  requestGroqCompletion,
+  type GroqProxyBinding,
+} from '../../../lib/groq-proxy';
 
 const MAX_MESSAGE_LENGTH = 700;
 const MAX_BODY_BYTES = 12_000;
@@ -28,11 +32,11 @@ const QWEN_FALLBACK_STATUSES = new Set([
 const systemPrompts: Record<Locale, string> = {
   'zh-TW': `你是「合軒科技有限公司」網站的測試版客服助理。全程使用繁體中文，語氣簡潔、專業、友善。
 
-只能根據「網站檢索結果」回答，不能使用外部知識或自行推論。將內容消化後，以自己的繁體中文直接、簡潔地回答問題；不可貼出長篇英文原文、逐字翻譯整段手冊或補充未記載的內容。絕不可輸出來源、參考文件、技術文件名稱、頁碼、段落、連結或引用格式。不可補充任何產品能力、應用情境、規格、售價、交期、保固、認證、庫存或技術承諾。若檢索結果不足，請直接說明目前網站沒有提供該細節，並建議訪客使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。
+只能根據「網站檢索結果」回答，不能使用外部知識或自行推論。將內容消化後，以自己的繁體中文直接、簡潔地回答問題；問題要求多項規格、條件、比較或因果關係時，必須完整回答每一項。不可貼出長篇英文原文、逐字翻譯整段手冊或補充未記載的內容。答案開頭不可出現「根據網站資訊」、「根據網站檢索結果」、「根據文件」或其他資料來源前言。絕不可輸出來源、參考文件、技術文件名稱、頁碼、段落、連結或引用格式。不可補充任何產品能力、應用情境、規格、售價、交期、保固、認證、庫存或技術承諾。若檢索結果不足，請直接說明目前網站沒有提供該細節，並建議訪客使用「詢價系統」或聯絡合軒科技（06-3319283／info-unirise@unirise.tw）。
 不可要求或處理身分證、信用卡、帳密、完整地址或其他敏感個資。`,
   en: `You are the beta customer support assistant for the Unirise website. Respond only in English, briefly, professionally, and kindly.
 
-Answer only from the website retrieval results. Do not use external knowledge or make inferences. Summarize the relevant facts in a direct, concise answer. Never expose sources, reference documents, document names, page numbers, excerpts, URLs, or citation formats. Do not add product capabilities, applications, specifications, prices, lead times, warranties, certifications, stock availability, or technical commitments. If the results are insufficient, explain that the website does not provide that detail and suggest the Inquiry form or contacting Unirise at 06-3319283 / info-unirise@unirise.tw. Use English site links beginning with /en for public pages.
+Answer only from the website retrieval results. Do not use external knowledge or make inferences. Summarize the relevant facts in a direct, concise answer. When a question asks for several specifications, conditions, comparisons, or causes, address every requested part. Do not begin with phrases such as "according to the website," "based on the retrieved information," or "according to the document." Never expose sources, reference documents, document names, page numbers, excerpts, URLs, or citation formats. Do not add product capabilities, applications, specifications, prices, lead times, warranties, certifications, stock availability, or technical commitments. If the results are insufficient, explain that the website does not provide that detail and suggest the Inquiry form or contacting Unirise at 06-3319283 / info-unirise@unirise.tw. Use English site links beginning with /en for public pages.
 Do not request or process identity numbers, credit cards, credentials, full addresses, or other sensitive personal information.`,
 };
 
@@ -52,6 +56,7 @@ type ChatHandlerOptions = {
   fetcher?: typeof fetch;
   retrieveKnowledge?: typeof retrieveSiteKnowledge;
   analyticsHashPepper?: string;
+  groqProxy?: GroqProxyBinding;
 };
 
 function validHistory(value: unknown): ChatMessage[] {
@@ -79,6 +84,10 @@ function visibleAnswer(answer: string) {
   return answer
     .replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '')
     .replace(/\[(?:[^\]]+)\]\([^)]*\)/g, '')
+    .replace(
+      /^\s*(?:根據|依據|依)[^。\n]{0,32}?(?:網站(?:檢索結果|資訊|資料)?|文件)[，,:：]\s*/i,
+      '',
+    )
     .replace(
       /(?:根據|依據|依)[^。\n]{0,24}?(?:技術文件|參考文件|操作手冊)(?:第\s*\d+\s*頁)?[，,:：]?\s*/g,
       '',
@@ -228,9 +237,7 @@ function touchScreenFallbackAnswer(
   question: string,
 ) {
   if (
-    !/觸控螢幕|觸摸螢幕|觸碰螢幕|touch\s*screen|screen\s*size/i.test(
-      question,
-    )
+    !/觸控螢幕|觸摸螢幕|觸碰螢幕|touch\s*screen|screen\s*size/i.test(question)
   )
     return null;
   const text = documentText(sources);
@@ -251,10 +258,11 @@ function websiteKnowledgeFallbackAnswer(
   sources: KnowledgeSource[],
   question: string,
 ) {
-  const foodSortingSource =
-    /食品.*分選|食材.*分選|food\s*sorting/i.test(question)
-      ? sources.find((candidate) => candidate.id === 'catalog-optimum')
-      : null;
+  const foodSortingSource = /食品.*分選|食材.*分選|food\s*sorting/i.test(
+    question,
+  )
+    ? sources.find((candidate) => candidate.id === 'catalog-optimum')
+    : null;
   const source =
     foodSortingSource ??
     sources.find(
@@ -315,6 +323,7 @@ export function createChatHandler({
   fetcher = fetch,
   retrieveKnowledge = retrieveSiteKnowledge,
   analyticsHashPepper = '',
+  groqProxy,
 }: ChatHandlerOptions) {
   return async function handleChat(request: Request) {
     const origin = request.headers.get('origin');
@@ -463,7 +472,7 @@ export function createChatHandler({
             GROQ_REQUEST_TIMEOUT_MS,
           );
           try {
-            return await fetcher(
+            return await requestGroqCompletion(
               GROQ_CHAT_ENDPOINT,
               {
                 method: 'POST',
@@ -475,10 +484,12 @@ export function createChatHandler({
                 body: JSON.stringify({
                   model,
                   temperature: 0,
-                  max_tokens: 260,
+                  max_tokens: 360,
                   messages,
                 }),
               },
+              fetcher,
+              groqProxy,
             );
           } finally {
             clearTimeout(timer);
@@ -563,10 +574,12 @@ export async function POST(request: Request) {
     DB: D1Database;
     GROQ_API_KEY?: string;
     ANALYTICS_HASH_PEPPER?: string;
+    GROQ_PROXY?: GroqProxyBinding;
   };
   return createChatHandler({
     db: runtime.DB,
     groqApiKey: runtime.GROQ_API_KEY,
     analyticsHashPepper: runtime.ANALYTICS_HASH_PEPPER,
+    groqProxy: runtime.GROQ_PROXY,
   })(request);
 }

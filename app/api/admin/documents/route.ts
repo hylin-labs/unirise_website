@@ -138,6 +138,13 @@ export function createDocumentsAdminHandler(
         );
       }
 
+      if (request.headers.get('x-document-processing-mode') === 'browser') {
+        return Response.json(
+          { record: { id, status: 'pending' } },
+          { status: 201, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
+
       try {
         const result = await automaticallyProcessDocument(
           { DB: runtime.DB, DOCUMENTS: runtime.DOCUMENTS },
