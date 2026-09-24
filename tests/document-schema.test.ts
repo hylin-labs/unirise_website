@@ -45,6 +45,17 @@ describe('document knowledge storage', () => {
     expect(migration).toContain('ON DELETE SET NULL');
   });
 
+  it('stores multiple configurable LINE contacts without storing QR images separately', async () => {
+    const migration = await readFile(
+      resolve('drizzle/0007_add_line_contact_settings.sql'),
+      'utf8',
+    );
+    expect(migration).toContain('CREATE TABLE site_line_contacts');
+    expect(migration).toContain('line_url TEXT NOT NULL');
+    expect(migration).toContain('enabled INTEGER NOT NULL DEFAULT 1');
+    expect(migration).toContain('display_order INTEGER NOT NULL DEFAULT 0');
+  });
+
   it('accepts common technical document formats and preserves confidential classification', () => {
     expect(documentMimeTypeForFilename('manual.docx')).toBe(
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

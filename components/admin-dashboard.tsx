@@ -14,11 +14,18 @@ import {
 import type { DashboardSnapshot } from '../lib/analytics';
 import { youtubeThumbnailUrl } from '../lib/youtube';
 import styles from './admin-dashboard.module.css';
+import { LineContactManager } from './line-contact-manager';
 import { TranslationManager } from './translation-manager';
 
 /* oxlint-disable next/no-html-link-for-pages -- The logo intentionally performs a full navigation out of administrator state. */
 
-type View = 'overview' | 'content' | 'leads' | 'gaps' | 'translations';
+type View =
+  | 'overview'
+  | 'content'
+  | 'leads'
+  | 'gaps'
+  | 'translations'
+  | 'lineContacts';
 
 const metricCards: Array<{
   key: keyof DashboardSnapshot['metrics'];
@@ -320,6 +327,9 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
               ...(identity.role === 'admin'
                 ? [['translations', '英文翻譯']]
                 : []),
+              ...(identity.role === 'admin'
+                ? [['lineContacts', 'LINE 聯絡']]
+                : []),
             ] as Array<[View, string]>
           ).map(([id, label]) => (
             <button
@@ -366,12 +376,14 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                     ? '客戶詢問'
                     : view === 'translations'
                       ? '英文翻譯管理'
-                      : '聊天知識缺口'}
+                      : view === 'lineContacts'
+                        ? 'LINE 聯絡管理'
+                        : '聊天知識缺口'}
             </h1>
           </div>
           <div
             className={
-              view === 'translations'
+              view === 'translations' || view === 'lineContacts'
                 ? styles.hiddenFilters
                 : styles.dateFilters
             }
@@ -506,6 +518,10 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
 
         {view === 'translations' && identity.role === 'admin' ? (
           <TranslationManager />
+        ) : null}
+
+        {view === 'lineContacts' && identity.role === 'admin' ? (
+          <LineContactManager />
         ) : null}
 
         {!loading && snapshot && view === 'content' ? (

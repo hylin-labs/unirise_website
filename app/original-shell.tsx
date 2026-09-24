@@ -3,6 +3,10 @@
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { LanguageSwitcher } from '../components/language-switcher';
+import {
+  LineFloatingContact,
+  LineFooterLink,
+} from '../components/line-contact';
 import { SupportChat } from '../components/support-chat';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
@@ -116,7 +120,9 @@ export function OriginalHeader({
             <i className="original-fa original-fa-cart" aria-hidden="true" />
             {chrome.text.cart}
           </a>
-          <span className="original-language-label">{chrome.text.language}</span>
+          <span className="original-language-label">
+            {chrome.text.language}
+          </span>
           <span className="original-language-switcher">
             <LanguageSwitcher pathname={pathname} />
           </span>
@@ -135,7 +141,10 @@ export function OriginalHeader({
         <div className={`original-nav-list ${mobileMenu ? 'open' : ''}`}>
           <div className="original-mobile-utilities">
             <a href={localizedPath(locale, '/search')}>
-              <i className="original-fa original-fa-search" aria-hidden="true" />
+              <i
+                className="original-fa original-fa-search"
+                aria-hidden="true"
+              />
               {chrome.text.search}
             </a>
             <span className="original-mobile-language">
@@ -288,17 +297,10 @@ export function OriginalFooter({
                   aria-hidden="true"
                 />
               </a>
-              <a
-                href={chrome.literals.lineUrl}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="LINE"
-              >
-                <i
-                  className="original-icomoon original-line"
-                  aria-hidden="true"
-                />
-              </a>
+              <LineFooterLink
+                locale={locale}
+                fallbackUrl={chrome.literals.lineUrl}
+              />
               <a
                 href={chrome.literals.youtubeUrl}
                 target="_blank"
@@ -345,11 +347,10 @@ export function OriginalFooter({
           </div>
         </div>
         <div className="original-copyright">
-          <div className="original-container">
-            {copyright}
-          </div>
+          <div className="original-container">{copyright}</div>
         </div>
       </footer>
+      <LineFloatingContact locale={locale} />
       <a className="original-to-top" href="#top" aria-label={chrome.text.top}>
         <img src="/reference/original/gotop.svg" alt="" />
       </a>

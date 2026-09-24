@@ -10,6 +10,7 @@ export const uniriseSchema = {
   adminLoginCodes: 'admin_login_codes',
   adminSessions: 'admin_sessions',
   adminAuditLog: 'admin_audit_log',
+  lineContacts: 'site_line_contacts',
   managedNews: 'managed_news',
   managedDownloads: 'managed_downloads',
   chatKnowledge: 'chat_knowledge',

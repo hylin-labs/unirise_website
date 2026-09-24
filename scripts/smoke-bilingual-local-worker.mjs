@@ -36,7 +36,9 @@ function cleanup() {
     const termination = await Promise.allSettled(
       processes.map(terminateChildTree),
     );
-    const removal = await Promise.allSettled([removeTemporaryArtifact(temporary)]);
+    const removal = await Promise.allSettled([
+      removeTemporaryArtifact(temporary),
+    ]);
     const failures = [...termination, ...removal]
       .filter((result) => result.status === 'rejected')
       .map((result) => result.reason);
@@ -120,6 +122,7 @@ export default { async fetch(request, env, context) {
     '0004_add_document_knowledge.sql',
     '0005_add_document_extraction_metadata.sql',
     '0006_add_structured_knowledge_foundation.sql',
+    '0007_add_line_contact_settings.sql',
   ]) {
     await run([
       'd1',

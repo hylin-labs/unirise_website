@@ -211,6 +211,7 @@ try {
     '0004_add_document_knowledge.sql',
     '0005_add_document_extraction_metadata.sql',
     '0006_add_structured_knowledge_foundation.sql',
+    '0007_add_line_contact_settings.sql',
   ]) {
     await run(node, [
       wrangler,
