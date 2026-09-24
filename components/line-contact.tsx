@@ -11,6 +11,7 @@ type PublicLineContact = {
   labelZh: string;
   labelEn: string;
   lineUrl: string;
+  qrImageUrl: string | null;
   displayOrder: number;
 };
 
@@ -20,6 +21,7 @@ const fallbackContacts: PublicLineContact[] = [
     labelZh: 'Hungyu（測試聯絡）',
     labelEn: 'Hungyu (test contact)',
     lineUrl: 'https://line.me/ti/p/Rg3ax2MQJn',
+    qrImageUrl: null,
     displayOrder: 0,
   },
 ];
@@ -32,6 +34,7 @@ function isContact(value: unknown): value is PublicLineContact {
     typeof contact.labelZh === 'string' &&
     typeof contact.labelEn === 'string' &&
     typeof contact.lineUrl === 'string' &&
+    (contact.qrImageUrl === null || typeof contact.qrImageUrl === 'string') &&
     typeof contact.displayOrder === 'number'
   );
 }
@@ -76,7 +79,7 @@ export function LineFooterLink({
   fallbackUrl: string;
 }) {
   const contacts = useLineContacts([
-    { ...fallbackContacts[0], lineUrl: fallbackUrl },
+    { ...fallbackContacts[0], lineUrl: fallbackUrl, qrImageUrl: null },
   ]);
   const firstContact = contacts[0];
   if (!firstContact) return null;
@@ -102,7 +105,7 @@ export function LineFloatingContact({ locale }: { locale: Locale }) {
   useEffect(() => {
     let active = true;
     void Promise.all(
-      contacts.map(
+      contacts.filter((contact) => !contact.qrImageUrl).map(
         async (contact) =>
           [
             contact.id,
@@ -157,8 +160,8 @@ export function LineFloatingContact({ locale }: { locale: Locale }) {
                 rel="noopener noreferrer"
                 key={contact.id}
               >
-                {qrCodes[contact.id] ? (
-                  <img src={qrCodes[contact.id]} alt="" />
+                {contact.qrImageUrl || qrCodes[contact.id] ? (
+                  <img src={contact.qrImageUrl ?? qrCodes[contact.id]} alt="" />
                 ) : (
                   <span className="line-qr-loading" aria-hidden="true" />
                 )}

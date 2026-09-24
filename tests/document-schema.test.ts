@@ -45,7 +45,7 @@ describe('document knowledge storage', () => {
     expect(migration).toContain('ON DELETE SET NULL');
   });
 
-  it('stores multiple configurable LINE contacts without storing QR images separately', async () => {
+  it('stores multiple configurable LINE contacts and optional uploaded QR images', async () => {
     const migration = await readFile(
       resolve('drizzle/0007_add_line_contact_settings.sql'),
       'utf8',
@@ -54,6 +54,11 @@ describe('document knowledge storage', () => {
     expect(migration).toContain('line_url TEXT NOT NULL');
     expect(migration).toContain('enabled INTEGER NOT NULL DEFAULT 1');
     expect(migration).toContain('display_order INTEGER NOT NULL DEFAULT 0');
+    const qrMigration = await readFile(
+      resolve('drizzle/0008_add_line_contact_qr_images.sql'),
+      'utf8',
+    );
+    expect(qrMigration).toContain('ADD COLUMN qr_image_key TEXT');
   });
 
   it('accepts common technical document formats and preserves confidential classification', () => {

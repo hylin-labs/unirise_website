@@ -400,6 +400,23 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.lineContactRow small {
+  display: block;
+  margin-top: 8px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.lineQrPreview {
+  width: 88px;
+  height: 88px;
+  display: block;
+  margin-top: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  image-rendering: pixelated;
+}
 .lineContactRow a {
   color: #0b6a35;
 }
@@ -426,6 +443,26 @@
 .lineEnabledField input {
   width: 18px !important;
   height: 18px;
+}
+.lineQrUploadField {
+  grid-column: 1 / -1;
+  display: grid !important;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed #b7c7d8;
+  border-radius: 7px;
+  background: #f7fafc;
+}
+.lineQrUploadField input {
+  padding: 8px !important;
+  background: #fff;
+}
+.lineQrUploadField small,
+.lineQrUploadField span {
+  color: #5b6773;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
 }
 .documentUploadField {
   grid-column: 1 / -1;

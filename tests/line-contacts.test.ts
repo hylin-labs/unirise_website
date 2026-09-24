@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createAdminLineContactsHandler } from '../app/api/admin/line-contacts/route';
-import { normalizeLineUrl, parseLineContactInput } from '../lib/line-contacts';
+import {
+  normalizeLineUrl,
+  parseLineContactInput,
+  publicLineContacts,
+} from '../lib/line-contacts';
 
 type StoredContact = {
   id: string;
   labelZh: string;
   labelEn: string;
   lineUrl: string;
+  qrImageKey?: string | null;
   enabled: boolean;
   displayOrder: number;
   updatedAt: string;
@@ -37,11 +42,17 @@ class Statement {
         label_zh: contact.labelZh,
         label_en: contact.labelEn,
         line_url: contact.lineUrl,
+        qr_image_key: contact.qrImageKey ?? null,
         enabled: contact.enabled ? 1 : 0,
         display_order: contact.displayOrder,
         updated_at: contact.updatedAt,
       }));
     return { results: records as T[] };
+  }
+
+  async first<T>() {
+    const { results } = await this.all<T>();
+    return results[0] ?? null;
   }
 
   async run() {
@@ -233,5 +244,22 @@ describe('LINE 聯絡設定', () => {
         )
       ).status,
     ).toBe(403);
+  });
+
+  it('公開資料只提供有版本的 QR 圖片路徑，不暴露 R2 儲存名稱', () => {
+    const [result] = publicLineContacts([
+      {
+        id: 'contact-1',
+        labelZh: '業務聯絡',
+        labelEn: 'Sales',
+        lineUrl: 'https://lin.ee/example',
+        qrImageKey: 'line-contacts/contact-1/qr-private.png',
+        enabled: true,
+        displayOrder: 0,
+        updatedAt: '2026-09-24T00:00:00.000Z',
+      },
+    ]);
+    expect(result.qrImageUrl).toContain('/api/line-contacts/qr-code?id=contact-1');
+    expect(JSON.stringify(result)).not.toContain('qr-private.png');
   });
 });

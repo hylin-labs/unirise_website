@@ -15,12 +15,16 @@ export type LineContact = {
   labelZh: string;
   labelEn: string;
   lineUrl: string;
+  qrImageKey: string | null;
   enabled: boolean;
   displayOrder: number;
   updatedAt: string;
 };
 
-export type LineContactInput = Omit<LineContact, 'id' | 'updatedAt'>;
+export type LineContactInput = Omit<
+  LineContact,
+  'id' | 'updatedAt' | 'qrImageKey'
+>;
 
 export class LineContactValidationError extends Error {}
 
@@ -36,6 +40,7 @@ const defaultContact: LineContact = {
   labelZh: 'Hungyu（測試聯絡）',
   labelEn: 'Hungyu (test contact)',
   lineUrl: 'https://line.me/ti/p/Rg3ax2MQJn',
+  qrImageKey: null,
   enabled: true,
   displayOrder: 0,
   updatedAt: '',
@@ -124,6 +129,7 @@ type Row = {
   label_zh: string;
   label_en: string;
   line_url: string;
+  qr_image_key: string | null;
   enabled: number;
   display_order: number;
   updated_at: string;
@@ -135,6 +141,7 @@ function contactFromRow(row: Row): LineContact {
     labelZh: row.label_zh,
     labelEn: row.label_en,
     lineUrl: row.line_url,
+    qrImageKey: row.qr_image_key,
     enabled: row.enabled === 1,
     displayOrder: row.display_order,
     updatedAt: row.updated_at,
@@ -148,12 +155,30 @@ export async function listLineContacts(
   const condition = includeDisabled ? '' : 'WHERE enabled = 1';
   const result = await db
     .prepare(
-      `SELECT id, label_zh, label_en, line_url, enabled, display_order, updated_at
+      `SELECT id, label_zh, label_en, line_url, qr_image_key, enabled, display_order, updated_at
        FROM ${uniriseSchema.lineContacts} ${condition}
        ORDER BY display_order ASC, updated_at DESC, id ASC`,
     )
     .all<Row>();
   return result.results.map(contactFromRow);
+}
+
+export async function findLineContact(
+  db: D1Database,
+  id: string,
+  includeDisabled = true,
+) {
+  const condition = includeDisabled ? '' : 'AND enabled = 1';
+  const row = await db
+    .prepare(
+      `SELECT id, label_zh, label_en, line_url, qr_image_key, enabled, display_order, updated_at
+       FROM ${uniriseSchema.lineContacts}
+       WHERE id = ? ${condition}
+       LIMIT 1`,
+    )
+    .bind(id)
+    .first<Row>();
+  return row ? contactFromRow(row) : null;
 }
 
 export async function createLineContact(
@@ -182,7 +207,7 @@ export async function createLineContact(
       ),
     auditStatement(db, actor, 'line_contact.created', id, input, timestamp),
   ]);
-  return { id, ...input, updatedAt: timestamp };
+  return { id, ...input, qrImageKey: null, updatedAt: timestamp };
 }
 
 export async function updateLineContact(
@@ -191,6 +216,8 @@ export async function updateLineContact(
   input: LineContactInput,
   actor: AdminIdentity,
 ) {
+  const existing = await findLineContact(db, id);
+  if (!existing) return null;
   const timestamp = new Date().toISOString();
   const result = await db
     .prepare(
@@ -212,7 +239,39 @@ export async function updateLineContact(
   await db.batch([
     auditStatement(db, actor, 'line_contact.updated', id, input, timestamp),
   ]);
-  return { id, ...input, updatedAt: timestamp };
+  return { id, ...input, qrImageKey: existing.qrImageKey, updatedAt: timestamp };
+}
+
+export async function replaceLineContactQrImage(
+  db: D1Database,
+  id: string,
+  qrImageKey: string,
+  actor: AdminIdentity,
+) {
+  const existing = await findLineContact(db, id);
+  if (!existing) return null;
+  const timestamp = new Date().toISOString();
+  const result = await db
+    .prepare(
+      `UPDATE ${uniriseSchema.lineContacts}
+       SET qr_image_key = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(qrImageKey, timestamp, id)
+    .run();
+  if (result.meta.changes !== 1) return null;
+  const contact = { ...existing, qrImageKey, updatedAt: timestamp };
+  await db.batch([
+    auditStatement(
+      db,
+      actor,
+      'line_contact.qr_uploaded',
+      id,
+      { qrImageUploaded: true },
+      timestamp,
+    ),
+  ]);
+  return { contact, replacedQrImageKey: existing.qrImageKey };
 }
 
 export async function deleteLineContact(
@@ -258,13 +317,18 @@ function auditStatement(
 }
 
 export function publicLineContacts(contacts: LineContact[]) {
-  return contacts.map(({ id, labelZh, labelEn, lineUrl, displayOrder }) => ({
-    id,
-    labelZh,
-    labelEn,
-    lineUrl,
-    displayOrder,
-  }));
+  return contacts.map(
+    ({ id, labelZh, labelEn, lineUrl, qrImageKey, displayOrder, updatedAt }) => ({
+      id,
+      labelZh,
+      labelEn,
+      lineUrl,
+      qrImageUrl: qrImageKey
+        ? `/api/line-contacts/qr-code?id=${encodeURIComponent(id)}&v=${encodeURIComponent(updatedAt)}`
+        : null,
+      displayOrder,
+    }),
+  );
 }
 
 export const fallbackLineContacts = [defaultContact];

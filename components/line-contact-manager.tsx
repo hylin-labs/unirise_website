@@ -1,5 +1,7 @@
 'use client';
 
+/* oxlint-disable next/no-img-element -- uploaded LINE QR Code images are served by the Worker, not an image optimizer. */
+
 import { type SyntheticEvent, useEffect, useState } from 'react';
 import { redirectAdminUnauthorized } from '../lib/admin-content';
 import styles from './admin-dashboard.module.css';
@@ -9,11 +11,12 @@ type LineContact = {
   labelZh: string;
   labelEn: string;
   lineUrl: string;
+  qrImageKey: string | null;
   enabled: boolean;
   displayOrder: number;
   updatedAt: string;
 };
-type Draft = Omit<LineContact, 'id' | 'updatedAt'>;
+type Draft = Omit<LineContact, 'id' | 'updatedAt' | 'qrImageKey'>;
 const emptyDraft: Draft = {
   labelZh: '',
   labelEn: '',
@@ -23,14 +26,26 @@ const emptyDraft: Draft = {
 };
 
 function draftFromContact(contact: LineContact): Draft {
-  const { id: _id, updatedAt: _updatedAt, ...draft } = contact;
+  const { id: _id, updatedAt: _updatedAt, qrImageKey: _qrImageKey, ...draft } =
+    contact;
   return draft;
+}
+
+function qrImageUrl(contact: LineContact) {
+  if (!contact.qrImageKey) return null;
+  return `/api/admin/line-contacts/qr-code?id=${encodeURIComponent(contact.id)}&v=${encodeURIComponent(contact.updatedAt)}`;
 }
 
 function messageFor(error: string) {
   if (error === 'lineUrl must be a LINE link')
     return '請輸入 LINE 的加好友連結，例如 https://line.me/ti/p/… 或 https://lin.ee/…';
   if (error === 'not_found') return '這個聯絡窗口已不存在，請重新載入。';
+  if (error === 'qr_image_too_large')
+    return 'QR Code 圖片不可超過 1 MB。';
+  if (error === 'qr_image_type_invalid')
+    return 'QR Code 僅支援 PNG、JPG 或 WebP 圖片。';
+  if (error === 'qr_image_signature_invalid')
+    return '圖片檔案內容不正確，請重新匯出或改用 PNG、JPG、WebP 圖片。';
   return '無法儲存 LINE 聯絡設定，請確認內容後再試。';
 }
 
@@ -38,6 +53,7 @@ export function LineContactManager() {
   const [contacts, setContacts] = useState<LineContact[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -85,6 +101,23 @@ export function LineContactManager() {
   function resetEditor() {
     setDraft(emptyDraft);
     setEditingId(null);
+    setQrImage(null);
+  }
+
+  async function uploadQrImage(contactId: string, image: File) {
+    const data = new FormData();
+    data.set('contactId', contactId);
+    data.set('image', image);
+    const response = await fetch('/api/admin/line-contacts/qr-code', {
+      method: 'POST',
+      body: data,
+    });
+    if (redirectAdminUnauthorized(response, window.location)) return false;
+    if (!response.ok) {
+      const payload = (await response.json()) as { error?: string };
+      throw new Error(payload.error ?? 'qr_upload_failed');
+    }
+    return true;
   }
   async function save(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,9 +131,23 @@ export function LineContactManager() {
         body: JSON.stringify(editingId ? { id: editingId, ...draft } : draft),
       });
       if (redirectAdminUnauthorized(response, window.location)) return;
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        contact?: LineContact;
+      };
       if (!response.ok) throw new Error(payload.error ?? 'save_failed');
-      setNotice(editingId ? 'LINE 聯絡窗口已更新。' : 'LINE 聯絡窗口已新增。');
+      if (!payload.contact) throw new Error('save_failed');
+      if (qrImage) {
+        const uploaded = await uploadQrImage(payload.contact.id, qrImage);
+        if (!uploaded) return;
+      }
+      setNotice(
+        qrImage
+          ? 'LINE 聯絡窗口與 QR Code 圖片已儲存。'
+          : editingId
+            ? 'LINE 聯絡窗口已更新。'
+            : 'LINE 聯絡窗口已新增。',
+      );
       resetEditor();
       await load();
     } catch (saveError) {
@@ -162,6 +209,15 @@ export function LineContactManager() {
                 >
                   {contact.lineUrl}
                 </a>
+                {qrImageUrl(contact) ? (
+                  <img
+                    className={styles.lineQrPreview}
+                    src={qrImageUrl(contact) ?? undefined}
+                    alt={`${contact.labelZh} QR Code`}
+                  />
+                ) : (
+                  <small>尚未上傳圖片，公開網站會由 LINE 連結自動產生 QR Code。</small>
+                )}
               </div>
               <div className={styles.lineContactMeta}>
                 <span>{contact.enabled ? '公開中' : '暫停顯示'}</span>
@@ -172,6 +228,7 @@ export function LineContactManager() {
                     onClick={() => {
                       setDraft(draftFromContact(contact));
                       setEditingId(contact.id);
+                      setQrImage(null);
                       setNotice('');
                       setError('');
                     }}
@@ -235,6 +292,18 @@ export function LineContactManager() {
             required
             placeholder="https://line.me/ti/p/… 或 https://lin.ee/…"
           />
+        </label>
+        <label className={styles.lineQrUploadField}>
+          上傳 LINE QR Code 圖片（選填）
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => setQrImage(event.target.files?.[0] ?? null)}
+          />
+          <small>
+            支援 PNG、JPG、WebP，檔案最大 1 MB。若未上傳，系統會由 LINE 連結自動產生 QR Code。
+          </small>
+          {qrImage ? <span>已選擇：{qrImage.name}</span> : null}
         </label>
         <label>
           顯示排序
