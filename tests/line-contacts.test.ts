@@ -10,7 +10,7 @@ type StoredContact = {
   id: string;
   labelZh: string;
   labelEn: string;
-  lineUrl: string;
+  lineUrl: string | null;
   qrImageKey?: string | null;
   enabled: boolean;
   displayOrder: number;
@@ -70,7 +70,7 @@ class Statement {
         string,
         string,
         string,
-        string,
+        string | null,
         number,
         number,
         string,
@@ -88,7 +88,15 @@ class Statement {
     }
     if (this.sql.includes('UPDATE site_line_contacts')) {
       const [labelZh, labelEn, lineUrl, enabled, displayOrder, updatedAt, id] =
-        this.values as [string, string, string, number, number, string, string];
+        this.values as [
+          string,
+          string,
+          string | null,
+          number,
+          number,
+          string,
+          string,
+        ];
       const contact = this.database.contacts.get(id);
       if (!contact) return { success: true, results: [], meta: { changes: 0 } };
       Object.assign(contact, {
@@ -152,6 +160,27 @@ describe('LINE 聯絡設定', () => {
     expect(() => parseLineContactInput({ ...contact, extra: true })).toThrow(
       'invalid_request',
     );
+    expect(parseLineContactInput({ ...contact, lineUrl: '' }).lineUrl).toBeNull();
+  });
+
+  it('只有 QR Code 的新窗口會先保持非公開，直到圖片上傳完成', async () => {
+    const database = new TestDatabase();
+    const handler = createAdminLineContactsHandler(database.d1, admin);
+    const response = await handler(
+      new Request('https://unirise.example/api/admin/line-contacts', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://unirise.example',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ...contact, lineUrl: '', enabled: true }),
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as { contact: unknown }).contact).toMatchObject({
+      lineUrl: null,
+      enabled: false,
+    });
   });
 
   it('管理員可新增、更新與刪除多個聯絡窗口，並留下稽核紀錄', async () => {
@@ -252,7 +281,7 @@ describe('LINE 聯絡設定', () => {
         id: 'contact-1',
         labelZh: '業務聯絡',
         labelEn: 'Sales',
-        lineUrl: 'https://lin.ee/example',
+        lineUrl: null,
         qrImageKey: 'line-contacts/contact-1/qr-private.png',
         enabled: true,
         displayOrder: 0,

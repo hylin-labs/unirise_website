@@ -123,6 +123,8 @@ export default { async fetch(request, env, context) {
     '0005_add_document_extraction_metadata.sql',
     '0006_add_structured_knowledge_foundation.sql',
     '0007_add_line_contact_settings.sql',
+    '0008_add_line_contact_qr_images.sql',
+    '0009_allow_qr_only_line_contacts.sql',
   ]) {
     await run([
       'd1',

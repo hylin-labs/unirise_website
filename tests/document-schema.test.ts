@@ -59,6 +59,12 @@ describe('document knowledge storage', () => {
       'utf8',
     );
     expect(qrMigration).toContain('ADD COLUMN qr_image_key TEXT');
+    const qrOnlyMigration = await readFile(
+      resolve('drizzle/0009_allow_qr_only_line_contacts.sql'),
+      'utf8',
+    );
+    expect(qrOnlyMigration).toContain('line_url TEXT,');
+    expect(qrOnlyMigration).toContain('qr_image_key TEXT');
   });
 
   it('accepts common technical document formats and preserves confidential classification', () => {

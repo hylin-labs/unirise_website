@@ -14,7 +14,7 @@ export type LineContact = {
   id: string;
   labelZh: string;
   labelEn: string;
-  lineUrl: string;
+  lineUrl: string | null;
   qrImageKey: string | null;
   enabled: boolean;
   displayOrder: number;
@@ -90,6 +90,13 @@ export function normalizeLineUrl(value: unknown) {
   return url.toString();
 }
 
+function optionalLineUrl(value: unknown) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string')
+    throw new LineContactValidationError('lineUrl is invalid');
+  return value.trim() ? normalizeLineUrl(value) : null;
+}
+
 function displayOrder(value: unknown) {
   if (
     !Number.isInteger(value) ||
@@ -118,7 +125,7 @@ export function parseLineContactInput(value: unknown): LineContactInput {
   return {
     labelZh: requiredLabel(record.labelZh, 'labelZh'),
     labelEn: requiredLabel(record.labelEn, 'labelEn'),
-    lineUrl: normalizeLineUrl(record.lineUrl),
+    lineUrl: optionalLineUrl(record.lineUrl),
     enabled: record.enabled,
     displayOrder: displayOrder(record.displayOrder),
   };
@@ -128,7 +135,7 @@ type Row = {
   id: string;
   label_zh: string;
   label_en: string;
-  line_url: string;
+  line_url: string | null;
   qr_image_key: string | null;
   enabled: number;
   display_order: number;
@@ -188,6 +195,10 @@ export async function createLineContact(
 ) {
   const id = crypto.randomUUID();
   const timestamp = new Date().toISOString();
+  const storedInput = {
+    ...input,
+    enabled: input.enabled && Boolean(input.lineUrl),
+  };
   await db.batch([
     db
       .prepare(
@@ -197,17 +208,24 @@ export async function createLineContact(
       )
       .bind(
         id,
-        input.labelZh,
-        input.labelEn,
-        input.lineUrl,
-        input.enabled ? 1 : 0,
-        input.displayOrder,
+        storedInput.labelZh,
+        storedInput.labelEn,
+        storedInput.lineUrl,
+        storedInput.enabled ? 1 : 0,
+        storedInput.displayOrder,
         timestamp,
         timestamp,
       ),
-    auditStatement(db, actor, 'line_contact.created', id, input, timestamp),
+    auditStatement(
+      db,
+      actor,
+      'line_contact.created',
+      id,
+      storedInput,
+      timestamp,
+    ),
   ]);
-  return { id, ...input, qrImageKey: null, updatedAt: timestamp };
+  return { id, ...storedInput, qrImageKey: null, updatedAt: timestamp };
 }
 
 export async function updateLineContact(
@@ -218,6 +236,8 @@ export async function updateLineContact(
 ) {
   const existing = await findLineContact(db, id);
   if (!existing) return null;
+  if (input.enabled && !input.lineUrl && !existing.qrImageKey)
+    throw new LineContactValidationError('contact_method_required');
   const timestamp = new Date().toISOString();
   const result = await db
     .prepare(

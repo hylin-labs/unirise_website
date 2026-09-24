@@ -10,7 +10,7 @@ type PublicLineContact = {
   id: string;
   labelZh: string;
   labelEn: string;
-  lineUrl: string;
+  lineUrl: string | null;
   qrImageUrl: string | null;
   displayOrder: number;
 };
@@ -33,7 +33,7 @@ function isContact(value: unknown): value is PublicLineContact {
     typeof contact.id === 'string' &&
     typeof contact.labelZh === 'string' &&
     typeof contact.labelEn === 'string' &&
-    typeof contact.lineUrl === 'string' &&
+    (contact.lineUrl === null || typeof contact.lineUrl === 'string') &&
     (contact.qrImageUrl === null || typeof contact.qrImageUrl === 'string') &&
     typeof contact.displayOrder === 'number'
   );
@@ -81,8 +81,8 @@ export function LineFooterLink({
   const contacts = useLineContacts([
     { ...fallbackContacts[0], lineUrl: fallbackUrl, qrImageUrl: null },
   ]);
-  const firstContact = contacts[0];
-  if (!firstContact) return null;
+  const firstContact = contacts.find((contact) => contact.lineUrl);
+  if (!firstContact?.lineUrl) return null;
   return (
     <a
       href={firstContact.lineUrl}
@@ -104,8 +104,12 @@ export function LineFloatingContact({ locale }: { locale: Locale }) {
   const panelId = useId();
   useEffect(() => {
     let active = true;
+    const contactsWithoutUploadedQr = contacts.filter(
+      (contact): contact is PublicLineContact & { lineUrl: string } =>
+        !contact.qrImageUrl && typeof contact.lineUrl === 'string',
+    );
     void Promise.all(
-      contacts.filter((contact) => !contact.qrImageUrl).map(
+      contactsWithoutUploadedQr.map(
         async (contact) =>
           [
             contact.id,
@@ -118,7 +122,7 @@ export function LineFloatingContact({ locale }: { locale: Locale }) {
           ] as const,
       ),
     ).then((entries) => {
-      if (active) setQrCodes(Object.fromEntries(entries));
+      if (active) setQrCodes(Object.fromEntries(entries) as Record<string, string>);
     });
     return () => {
       active = false;
@@ -152,25 +156,44 @@ export function LineFloatingContact({ locale }: { locale: Locale }) {
           </div>
           <p>{chooseText}</p>
           <div className="line-contact-list">
-            {contacts.map((contact) => (
-              <a
-                className="line-contact-card"
-                href={contact.lineUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                key={contact.id}
-              >
-                {contact.qrImageUrl || qrCodes[contact.id] ? (
-                  <img src={contact.qrImageUrl ?? qrCodes[contact.id]} alt="" />
-                ) : (
-                  <span className="line-qr-loading" aria-hidden="true" />
-                )}
-                <span>
-                  <strong>{contactLabel(contact, locale)}</strong>
-                  <small>{locale === 'en' ? 'Open LINE' : '開啟 LINE'}</small>
-                </span>
-              </a>
-            ))}
+            {contacts.map((contact) => {
+              const content = (
+                <>
+                  {contact.qrImageUrl || qrCodes[contact.id] ? (
+                    <img src={contact.qrImageUrl ?? qrCodes[contact.id]} alt="" />
+                  ) : (
+                    <span className="line-qr-loading" aria-hidden="true" />
+                  )}
+                  <span>
+                    <strong>{contactLabel(contact, locale)}</strong>
+                    <small>
+                      {contact.lineUrl
+                        ? locale === 'en'
+                          ? 'Open LINE'
+                          : '開啟 LINE'
+                        : locale === 'en'
+                          ? 'Scan QR Code'
+                          : '請掃描 QR Code'}
+                    </small>
+                  </span>
+                </>
+              );
+              return contact.lineUrl ? (
+                <a
+                  className="line-contact-card"
+                  href={contact.lineUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  key={contact.id}
+                >
+                  {content}
+                </a>
+              ) : (
+                <div className="line-contact-card" key={contact.id}>
+                  {content}
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : null}
