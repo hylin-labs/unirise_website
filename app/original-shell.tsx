@@ -8,6 +8,8 @@ import {
   LineFooterLink,
 } from '../components/line-contact';
 import { SupportChat } from '../components/support-chat';
+import { VisitorAnalyticsProvider } from '../components/visitor-analytics';
+import { VisitorCounter } from '../components/visitor-counter';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
 import { initialPublicContent } from '../lib/public-content';
@@ -271,7 +273,7 @@ export function OriginalFooter({
     String(new Date().getFullYear()),
   );
   return (
-    <>
+    <VisitorAnalyticsProvider locale={locale}>
       <footer className="original-footer" id="contact">
         <div className="original-container original-footer-grid">
           <div>
@@ -347,7 +349,9 @@ export function OriginalFooter({
           </div>
         </div>
         <div className="original-copyright">
-          <div className="original-container">{copyright}</div>
+          <div className="original-container">
+            {copyright} <VisitorCounter locale={locale} />
+          </div>
         </div>
       </footer>
       <LineFloatingContact locale={locale} />
@@ -355,6 +359,6 @@ export function OriginalFooter({
         <img src="/reference/original/gotop.svg" alt="" />
       </a>
       <SupportChat locale={locale} labels={chrome.text.chat} />
-    </>
+    </VisitorAnalyticsProvider>
   );
 }

@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VisitorCounter } from '../components/visitor-counter';
+import { VisitorAnalyticsProvider } from '../components/visitor-analytics';
 import { SupportChat } from '../components/support-chat';
 import { initialPublicContent } from '../lib/public-content';
 
@@ -45,7 +46,13 @@ describe('bilingual public request contracts', () => {
         );
       }),
     );
-    await act(async () => root.render(<VisitorCounter locale="en" />));
+    await act(async () =>
+      root.render(
+        <VisitorAnalyticsProvider locale="en">
+          <VisitorCounter locale="en" />
+        </VisitorAnalyticsProvider>,
+      ),
+    );
     expect(requests).toContainEqual({
       url: '/api/visitor-stats',
       body: undefined,
@@ -77,6 +84,41 @@ describe('bilingual public request contracts', () => {
       },
     });
     expect(JSON.stringify(requests)).not.toContain('private@example.com');
+  });
+
+  it('continues to record public activity when the counter is not rendered', async () => {
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        requests.push({
+          url,
+          body:
+            typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+        });
+        return Response.json(
+          url === '/api/visitor-stats'
+            ? { total: 4321, today: 123 }
+            : { accepted: true },
+        );
+      }),
+    );
+    await act(async () =>
+      root.render(
+        <VisitorAnalyticsProvider locale="en">
+          <span>頁尾已隱藏統計數字</span>
+        </VisitorAnalyticsProvider>,
+      ),
+    );
+
+    expect(requests).toContainEqual({
+      url: '/api/visitor-stats',
+      body: undefined,
+    });
+    expect(requests).toContainEqual({
+      url: '/api/analytics',
+      body: { locale: 'en', name: 'page_view', path: '/en/news?id=78' },
+    });
   });
 
   it('sends current locale on chat and lead requests and preserves the English source path', async () => {
