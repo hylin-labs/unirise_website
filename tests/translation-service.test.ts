@@ -312,6 +312,39 @@ describe('translation service', () => {
     expect(protectedText).not.toContain('-__UNIRISE_LITERAL_');
   });
 
+  it('preserves supported news formatting markers while translating the prose', async () => {
+    const { source } = await seeded();
+    const formattedSource = structuredClone(source);
+    if (formattedSource.payload.kind !== 'news')
+      throw new Error('expected news source');
+    formattedSource.payload.text.lead =
+      '[[b]]重要[[/b]]：[[color:blue]]厚度測量[[/color]]。';
+    const groq = await import('../lib/groq-translation');
+    let protectedText = '';
+    const translated = await groq.translateWithGroq(formattedSource, {
+      groqApiKey: 'server-only-key',
+      fetcher: async (_url, init) => {
+        const request = requestJson(init) as {
+          messages: Array<{ content: string }>;
+        };
+        const sent = JSON.parse(request.messages[1].content) as {
+          source: { text: { lead: string } };
+        };
+        protectedText = sent.source.text.lead;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(sent.source) } }],
+          }),
+        );
+      },
+    });
+
+    expect(protectedText).not.toContain('[[b]]');
+    expect(protectedText).toContain('__UNIRISE_LITERAL_');
+    if (translated.kind !== 'news') throw new Error('expected news');
+    expect(translated.text.lead).toBe(formattedSource.payload.text.lead);
+  });
+
   it('restores dollar signs in protected URLs literally with no placeholder residue', async () => {
     const { source } = await seeded();
     const literalSource = structuredClone(source);

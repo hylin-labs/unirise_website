@@ -22,6 +22,7 @@ import { PublicInquiryForm } from './public-inquiry-form';
 import { PublicVideoEmbed } from './public-video-embed';
 import { SolutionFinder } from './solution-finder';
 import { ProjectPassport } from './project-passport';
+import { RichText, richTextToPlainText } from './rich-text';
 
 /* oxlint-disable next/no-img-element, next/no-html-link-for-pages -- Preserve the original catalog, news, downloads, and contact markup and native links. */
 
@@ -356,7 +357,7 @@ export async function PublicNewsRoute({
             {postPublishedAt ? ` · ${postPublishedAt}` : ''}
           </time>
           <h2>{post.title}</h2>
-          <p className="article-lead">{post.lead}</p>
+          <RichText as="p" className="article-lead" text={post.lead} />
           <ul>
             {post.highlights.map((highlight) => (
               <li key={highlight}>{highlight}</li>
@@ -423,7 +424,7 @@ export async function PublicNewsRoute({
                   : ''}
               </time>
               <h2>{item.title}</h2>
-              <p>{item.lead}</p>
+              <RichText as="p" text={item.lead} />
               <a
                 href={localizedPath(
                   locale,
@@ -551,7 +552,7 @@ export async function PublicSearchRoute({
             '/news',
             `?id=${encodeURIComponent(item.legacyId)}`,
           ),
-          summary: item.lead,
+          summary: richTextToPlainText(item.lead),
           title: item.title,
         })),
         ...downloads.map((item) => ({

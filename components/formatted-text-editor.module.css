@@ -1,0 +1,59 @@
+.editor {
+  display: grid;
+  gap: 8px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #d6dce4;
+  border-radius: 5px;
+  background: #f4f7fa;
+}
+
+.toolbar button,
+.toolbar select {
+  min-height: 34px;
+  border: 1px solid #b9c3cf;
+  border-radius: 4px;
+  background: #fff;
+  color: #1d2935;
+  font: inherit;
+}
+
+.toolbar button {
+  min-width: 34px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.toolbar select {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.toolbar button:hover,
+.toolbar button:focus-visible,
+.toolbar select:focus-visible {
+  outline: 2px solid #c7161e;
+  outline-offset: 1px;
+}
+
+.bold {
+  font-weight: 800 !important;
+}
+
+.italic {
+  font-style: italic;
+  font-family: Georgia, serif !important;
+}
+
+.help {
+  color: #5c6976;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}

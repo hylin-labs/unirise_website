@@ -6,6 +6,7 @@ import type { LocalizedNews } from '../lib/content-repository';
 import type { Locale } from '../lib/locales';
 import { localizedPath } from '../lib/localized-route';
 import { stablePublicImage } from '../lib/public-image';
+import { RichText } from './rich-text';
 import { youtubeThumbnailUrl } from '../lib/youtube';
 import type { ChromePayload, HomePayload } from '../lib/translation-types';
 
@@ -315,7 +316,7 @@ export function PublicHome({
                   </a>
                   <div>
                     <h3>{item.title}</h3>
-                    <p>{item.lead}</p>
+                    <RichText as="p" text={item.lead} />
                     <a
                       className="original-news-more"
                       href={localizedPath(

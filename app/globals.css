@@ -1006,6 +1006,27 @@ a {
   font-size: 18px;
   color: #333;
 }
+.rich-text-size-small {
+  font-size: 0.86em;
+}
+.rich-text-size-large {
+  font-size: 1.22em;
+}
+.rich-text-color-red {
+  color: #c7161e;
+}
+.rich-text-color-orange {
+  color: #b96000;
+}
+.rich-text-color-blue {
+  color: #075da8;
+}
+.rich-text-color-green {
+  color: #1c7a42;
+}
+.rich-text-color-purple {
+  color: #6c3aa3;
+}
 .article-detail ul {
   margin: 28px 0;
   padding-left: 22px;

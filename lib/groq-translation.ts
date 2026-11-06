@@ -12,6 +12,7 @@ const MAX_TOKENS = 2_000;
 const technicalToken = /\{[a-zA-Z]+\}|[a-zA-Z0-9]+(?:[._@+/-][a-zA-Z0-9]+)*/;
 const protectedTextSpan = new RegExp(
   [
+    "\\[\\[(?:\\/)?(?:b|i|size(?::(?:small|large))?|color(?::(?:red|orange|blue|green|purple))?)\\]\\]",
     "https?:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9._~:/?@!$&'()*+,;=%#-]*[A-Za-z0-9_~:/?@!$&'()*+,;=%#-])?",
     "\\/(?!\\/)[A-Za-z0-9][A-Za-z0-9._~!$&'()*+,;=:@%/?#-]*",
     "[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",

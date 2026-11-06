@@ -14,7 +14,9 @@ import {
 import type { DashboardSnapshot } from '../lib/analytics';
 import { youtubeThumbnailUrl } from '../lib/youtube';
 import styles from './admin-dashboard.module.css';
+import { FormattedTextEditor } from './formatted-text-editor';
 import { LineContactManager } from './line-contact-manager';
+import { RichText } from './rich-text';
 import { TranslationManager } from './translation-manager';
 
 /* oxlint-disable next/no-html-link-for-pages -- The logo intentionally performs a full navigation out of administrator state. */
@@ -607,17 +609,19 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                       </label>
                       {kind === 'news' ? (
                         <>
-                          <label className={styles.fullField}>
+                          <label className={styles.fullField} htmlFor="news-lead">
                             摘要
-                            <textarea
+                            <FormattedTextEditor
+                              id="news-lead"
+                              label="摘要"
                               required
                               maxLength={8000}
-                              rows={4}
+                              rows={5}
                               value={editor.lead}
-                              onChange={(event) =>
+                              onChange={(lead) =>
                                 setEditor({
                                   ...editor,
-                                  lead: event.target.value,
+                                  lead,
                                 })
                               }
                             />
@@ -748,13 +752,15 @@ export function AdminDashboard({ identity }: { identity: AdminIdentity }) {
                           />
                         ) : null}
                         <h3>{editor.title || '尚未輸入標題'}</h3>
-                        <p>
-                          {kind === 'knowledge'
-                            ? editor.body
-                            : kind === 'news'
-                              ? editor.lead
+                        {kind === 'news' ? (
+                          <RichText as="p" text={editor.lead} />
+                        ) : (
+                          <p>
+                            {kind === 'knowledge'
+                              ? editor.body
                               : `下載項目：${editor.title}`}
-                        </p>
+                          </p>
+                        )}
                         {kind === 'news' && editor.highlightsText ? (
                           <ul>
                             {editor.highlightsText
